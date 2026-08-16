@@ -1,0 +1,13 @@
+<svg viewBox="0 0 64 64" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(0 -8)">
+    <circle cx="25" cy="28" r="13"/>
+    <circle cx="41" cy="31.5" r="10"/>
+    <rect x="11" y="33" width="42" height="11" rx="5.5"/>
+  </g>
+  <g stroke="currentColor" stroke-width="5" stroke-linecap="round">
+    <line x1="19" y1="44" x2="14" y2="60"/>
+    <line x1="30" y1="44" x2="25" y2="60"/>
+    <line x1="41" y1="44" x2="36" y2="60"/>
+    <line x1="52" y1="44" x2="47" y2="60"/>
+  </g>
+</svg>

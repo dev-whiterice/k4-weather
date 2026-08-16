@@ -1,0 +1,388 @@
+/* Palette allineata alla griglia dei 16 grigi del Kindle 4 (multipli di 17):
+   usando solo questi valori le campiture non subiscono perdite in quantizzazione. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --ink-2: #444444;
+  --ink-3: #777777;
+  --rule: #bbbbbb;
+  --rule-soft: #dddddd;
+  --fill: #eeeeee;
+
+  --pad: 22px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 600px;
+  height: 800px;
+  overflow: hidden;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Inter, sans-serif;
+  font-feature-settings: "tnum" 1, "cv05" 1;
+  /* Niente subpixel: su e-ink produrrebbe frange colorate da appiattire. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+
+  display: grid;
+  grid-template-rows: 52px 190px 58px 162px 1fr 48px;
+}
+
+section {
+  padding-left: var(--pad);
+  padding-right: var(--pad);
+}
+
+svg {
+  display: block;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--rule);
+}
+
+.location {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.date {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+/* --------------------------------------------------------------- attuale */
+
+.current {
+  display: flex;
+  align-items: center;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.now-icon {
+  width: 112px;
+  height: 112px;
+  flex: 0 0 112px;
+}
+
+.now-main {
+  flex: 1;
+  margin-left: 18px;
+  min-width: 0;
+}
+
+.temp {
+  font-family: "Inter Display", Inter, sans-serif;
+  font-size: 96px;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.84;
+}
+
+.temp .deg {
+  letter-spacing: 0;
+}
+
+.condition {
+  margin-top: 12px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.apparent {
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.now-range {
+  flex: 0 0 auto;
+  text-align: right;
+  padding-left: 12px;
+}
+
+.range-row + .range-row {
+  margin-top: 10px;
+}
+
+.range-key {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.range-val {
+  display: block;
+  margin-top: 1px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+/* -------------------------------------------------------------- metriche */
+
+.metrics {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-top: 1px solid var(--rule-soft);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.metric + .metric {
+  border-left: 1px solid var(--rule-soft);
+}
+
+.m-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.m-value {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.m-unit {
+  margin-left: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+/* ----------------------------------------------------------------- orari */
+
+.hourly {
+  padding-top: 14px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.section-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.legend .swatch {
+  width: 8px;
+  height: 8px;
+  background: var(--rule);
+  border-radius: 1px;
+}
+
+.chart .area {
+  fill: var(--fill);
+}
+
+.chart .line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart .bar {
+  fill: var(--rule);
+}
+
+.chart .baseline {
+  stroke: var(--rule-soft);
+  stroke-width: 1;
+}
+
+.chart .marker {
+  fill: var(--ink);
+}
+
+.chart .marker-halo {
+  fill: var(--paper);
+}
+
+.chart .marker-label {
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+.chart .hour {
+  font-size: 10px;
+  font-weight: 500;
+  fill: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- giorni */
+
+.daily {
+  padding-top: 8px;
+  padding-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.day {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 40px 28px 40px 304px 40px 1fr;
+  column-gap: 8px;
+  align-items: center;
+}
+
+.day + .day {
+  border-top: 1px solid var(--rule-soft);
+}
+
+.d-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.d-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.d-min {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink-3);
+  text-align: right;
+  letter-spacing: -0.02em;
+}
+
+.d-max {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.d-track {
+  position: relative;
+  height: 8px;
+  background: var(--fill);
+  border-radius: 4px;
+}
+
+.d-fill {
+  position: absolute;
+  top: 0;
+  height: 8px;
+  background: var(--ink);
+  border-radius: 4px;
+}
+
+.d-precip {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.d-precip.none {
+  color: var(--rule);
+}
+
+/* --------------------------------------------------------------- footer */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--rule);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.foot-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.foot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.foot-item svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  color: var(--ink-2);
+}
+
+.foot-item .moon {
+  width: 15px;
+  height: 15px;
+}
+
+.foot-note {
+  color: var(--ink-3);
+}
+
+.stale {
+  font-weight: 700;
+  color: var(--ink);
+}

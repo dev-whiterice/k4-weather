@@ -1,0 +1,11 @@
+<svg viewBox="0 0 64 64" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(0 -8)">
+    <circle cx="25" cy="28" r="13"/>
+    <circle cx="41" cy="31.5" r="10"/>
+    <rect x="11" y="33" width="42" height="11" rx="5.5"/>
+  </g>
+  <path d="M31 41 L19 55 L26 55 L22 63 L35 48 L28 48 L33 41 Z"/>
+  <circle cx="44" cy="47" r="3.6"/>
+  <circle cx="52" cy="55" r="3.6"/>
+  <circle cx="41" cy="58" r="3.6"/>
+</svg>

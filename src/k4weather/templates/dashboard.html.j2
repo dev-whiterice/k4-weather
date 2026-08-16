@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>{{ d.location }} — {{ d.date_long }}</title>
+<style>{{ font_face_css }}</style>
+<style>{{ styles }}</style>
+</head>
+<body>
+
+<section class="header">
+  <div class="location">{{ d.location }}</div>
+  <div class="date">{{ d.date_long }}</div>
+</section>
+
+<section class="current">
+  <div class="now-icon">{{ icon(d.icon) }}</div>
+  <div class="now-main">
+    <div class="temp">{{ d.temperature }}<span class="deg">°</span></div>
+    <div class="condition">{{ d.condition }}</div>
+    <div class="apparent">percepiti {{ d.apparent }}</div>
+  </div>
+  <div class="now-range">
+    <div class="range-row">
+      <span class="range-key">max</span>
+      <span class="range-val">{{ d.today_max }}</span>
+    </div>
+    <div class="range-row">
+      <span class="range-key">min</span>
+      <span class="range-val">{{ d.today_min }}</span>
+    </div>
+  </div>
+</section>
+
+<section class="metrics">
+  {% for m in d.metrics %}
+  <div class="metric">
+    <div class="m-label">{{ m.label }}</div>
+    <div class="m-value">{{ m.value }}{% if m.unit or m.note %}<span class="m-unit">{{ m.unit }}{% if m.note %} {{ m.note }}{% endif %}</span>{% endif %}</div>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="hourly">
+  <div class="section-head">
+    <div class="section-title">{{ d.hourly_title }}</div>
+    <div class="legend"><span class="swatch"></span>probabilità di pioggia</div>
+  </div>
+  <svg class="chart" width="{{ d.chart_width }}" height="{{ d.chart_height + 18 }}"
+       viewBox="0 0 {{ d.chart_width }} {{ d.chart_height + 18 }}">
+    <path class="area" d="{{ d.temp_area_path }}"/>
+    <path class="line" d="{{ d.temp_path }}"/>
+
+    {%- for h in d.hours if h.is_extreme %}
+    <circle class="marker-halo" cx="{{ '%.2f'|format(h.x) }}" cy="{{ '%.2f'|format(h.temp_y) }}" r="5"/>
+    <circle class="marker" cx="{{ '%.2f'|format(h.x) }}" cy="{{ '%.2f'|format(h.temp_y) }}" r="3"/>
+    <text class="marker-label"
+          x="{{ '%.2f'|format(h.label_x) }}" y="{{ '%.2f'|format(h.label_y) }}"
+          text-anchor="middle">{{ h.temp }}°</text>
+    {%- endfor %}
+
+    <g transform="translate(0 {{ d.chart_temp_height + 6 }})">
+      <line class="baseline" x1="0" y1="{{ d.chart_bars_height }}"
+            x2="{{ d.chart_width }}" y2="{{ d.chart_bars_height }}"/>
+      {%- for h in d.hours if h.precip_probability > 0 %}
+      <rect class="bar" x="{{ '%.2f'|format(h.x - 3) }}" y="{{ '%.2f'|format(h.bar_y) }}"
+            width="6" height="{{ '%.2f'|format(h.bar_height) }}" rx="1.5"/>
+      {%- endfor %}
+    </g>
+
+    <g transform="translate(0 {{ d.chart_height }})">
+      {%- for h in d.hours if h.show_label %}
+      <text class="hour" x="{{ '%.2f'|format(h.x) }}" y="14"
+            text-anchor="{% if loop.first %}start{% else %}middle{% endif %}">{{ h.label }}</text>
+      {%- endfor %}
+    </g>
+  </svg>
+</section>
+
+<section class="daily">
+  {% for day in d.days %}
+  <div class="day">
+    <div class="d-name">{{ day.name }}</div>
+    <div class="d-icon">{{ icon(day.icon) }}</div>
+    <div class="d-min">{{ day.temp_min }}</div>
+    <div class="d-track">
+      <div class="d-fill" style="left: {{ '%.2f'|format(day.bar_x) }}px; width: {{ '%.2f'|format(day.bar_width) }}px;"></div>
+    </div>
+    <div class="d-max">{{ day.temp_max }}</div>
+    <div class="d-precip{% if not day.precip_probability %} none{% endif %}">{{ day.precip_label }}</div>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="footer">
+  <div class="foot-left">
+    {%- if d.sunrise %}
+    <div class="foot-item">{{ icon('sunrise') }}<span>{{ d.sunrise }}</span></div>
+    <div class="foot-item">{{ icon('sunset') }}<span>{{ d.sunset }}</span></div>
+    {%- endif %}
+    {%- if d.moon_svg %}
+    <div class="foot-item">{{ d.moon_svg }}<span>{{ d.moon_name }} {{ d.moon_illumination }}</span></div>
+    {%- endif %}
+  </div>
+  <div class="foot-note">
+    {%- if d.stale %}<span class="stale">dati non aggiornati</span> · {% endif -%}
+    Open-Meteo · agg. {{ d.updated_at }}
+  </div>
+</section>
+
+</body>
+</html>

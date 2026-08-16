@@ -1,0 +1,118 @@
+name: dashboard
+
+on:
+  schedule:
+    # Ogni 30 minuti. Il cron di GitHub Actions non e' puntuale: nelle ore di
+    # punta il ritardo arriva a 15-20 minuti e qualche esecuzione salta. Il
+    # Kindle si sveglia con uno sfasamento (vedi kindle/local/env.sh) e
+    # l'immagine porta sempre l'ora di generazione.
+    - cron: "0,30 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "config.yaml"
+      - ".github/workflows/dashboard.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashboard
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Cache di Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - run: playwright install --with-deps chromium
+
+      - name: Genera la dashboard
+        run: PYTHONPATH=src python -m k4weather generate --out out/dashboard.png
+
+      - name: Verifica che il PNG sia digeribile da eips
+        run: PYTHONPATH=src python -m k4weather inspect out/dashboard.png
+
+      - name: Prepara la cartella da pubblicare
+        run: |
+          mkdir -p publish
+          cp out/dashboard.png publish/dashboard.png
+          touch publish/.nojekyll
+          printf '{"generated_at":"%s","run":"%s"}\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${GITHUB_RUN_ID}" > publish/meta.json
+          cat > publish/index.html <<'HTML'
+          <!DOCTYPE html><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>k4-weather</title>
+          <style>
+            body{margin:0;min-height:100vh;display:grid;place-items:center;
+                 background:#111;font:14px system-ui;color:#888}
+            img{width:min(600px,96vw);image-rendering:pixelated;
+                background:#fff;box-shadow:0 8px 40px #0008}
+            p{margin:16px}
+          </style>
+          <div>
+            <img src="dashboard.png" alt="dashboard meteo">
+            <p>aggiornata ogni 30 minuti · <a href="meta.json" style="color:#888">meta.json</a></p>
+          </div>
+          HTML
+
+      - name: Pubblica l'immagine
+        env:
+          # Questo repo e' privato e il Kindle non sa autenticarsi, quindi
+          # l'immagine va su un repository pubblico separato. Si imposta in
+          # Settings > Secrets and variables > Actions > Variables.
+          PUBLISH_REPO: ${{ vars.PUBLISH_REPO || github.repository }}
+          PUBLISH_BRANCH: ${{ vars.PUBLISH_BRANCH || 'output' }}
+          # PAT fine-grained con contents:write sul repo di destinazione.
+          # Serve anche a tenere vivo lo scheduler: GitHub disattiva i workflow
+          # schedulati dopo 60 giorni e i commit del token automatico non
+          # contano come attivita'.
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if [ "$PUBLISH_REPO" != "$GITHUB_REPOSITORY" ] && [ -z "$PUBLISH_TOKEN" ]; then
+            echo "::error::PUBLISH_REPO punta a ${PUBLISH_REPO} ma manca il secret PUBLISH_TOKEN"
+            exit 1
+          fi
+          TOKEN="${PUBLISH_TOKEN:-$FALLBACK_TOKEN}"
+
+          cd publish
+          git init -q
+          git checkout -q -b "$PUBLISH_BRANCH"
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "dashboard $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Force push di un singolo commit senza storia: il branch resta di
+          # dimensione costante invece di accumulare 48 PNG al giorno.
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${PUBLISH_REPO}.git" \
+            "$PUBLISH_BRANCH"
+          echo "pubblicata su ${PUBLISH_REPO}@${PUBLISH_BRANCH}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dashboard
+          path: |
+            out/dashboard.png
+            out/dashboard.html
+          retention-days: 3

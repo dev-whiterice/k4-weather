@@ -23,7 +23,7 @@ RELEASES="https://api.github.com/repos/pascalw/kindle-dash/releases/latest"
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 fail() { printf '\033[31mErrore: %s\033[0m\n' "$1" >&2; exit 1; }
 
-for tool in curl tar rsync ssh; do
+for tool in curl tar ssh; do
   command -v "$tool" >/dev/null || fail "manca il comando '$tool'"
 done
 
@@ -55,15 +55,62 @@ else
   echo "    L'installazione prosegue: il Kindle funzionera' appena l'immagine esiste."
 fi
 
+# USBNetwork non fa da server DHCP: macOS chiede un indirizzo, non riceve
+# risposta e ripiega su un link-local 169.254.x.x. A quel punto il traffico per
+# il Kindle esce dal Wi-Fi verso internet e va in timeout. L'indirizzo host
+# della subnet va messo a mano.
+diagnose_usbnet() {
+  [ "$(uname)" = "Darwin" ] || return 0
+  local iface subnet
+  iface="$(networksetup -listallhardwareports 2>/dev/null \
+    | awk '/^Hardware Port: RNDIS|^Hardware Port: .*Ethernet Gadget/{getline; print $2; exit}')"
+  [ -n "$iface" ] || return 0
+
+  subnet="${KINDLE##*@}"; subnet="${subnet%.*}"
+  ifconfig "$iface" 2>/dev/null | grep -q "inet ${subnet}\." && return 0
+
+  cat >&2 <<EOF
+
+L'interfaccia USBNetwork ($iface) esiste ma non ha un indirizzo su ${subnet}.x:
+
+$(ifconfig "$iface" | grep -E 'inet |status' | sed 's/^/    /')
+
+Assegnalo e rilancia questo script:
+
+    sudo ifconfig $iface ${subnet}.201 netmask 255.255.255.0
+
+Va rifatto a ogni riconnessione del cavo. Non impostare un gateway su questa
+interfaccia: verrebbe preferita al Wi-Fi e resteresti senza internet.
+EOF
+  exit 1
+}
+
 step "Copio su $KINDLE:$REMOTE_DIR"
-ssh -o ConnectTimeout=10 "$KINDLE" "mkdir -p $REMOTE_DIR" \
-  || fail "non riesco a raggiungere $KINDLE (USBNetwork attivo? cavo collegato?)"
-rsync -r --info=stats1 "$BUILD/" "$KINDLE:$REMOTE_DIR"
+ssh -o ConnectTimeout=10 "$KINDLE" "mkdir -p $REMOTE_DIR" 2>/dev/null || {
+  diagnose_usbnet
+  fail "non riesco a raggiungere $KINDLE (USBNetwork attivo? cavo collegato?)"
+}
+# Niente rsync: macOS 15+ monta openrsync (compatibile rsync 2.6.9) e il
+# Kindle ha il tar di busybox. Un tar su SSH parla la lingua di entrambi.
+#
+# COPYFILE_DISABLE evita i sidecar AppleDouble `._*`, e --format=ustar evita
+# gli header pax estesi: il tar di busybox non li capisce e stampa una raffica
+# di "skipping header 'x'".
+COPYFILE_DISABLE=1 tar c --format=ustar -C "$BUILD" . \
+  | ssh "$KINDLE" "mkdir -p '$REMOTE_DIR' && cd '$REMOTE_DIR' && tar x"
+
+# Ripulisce i residui di installazioni fatte prima di questa correzione.
+# Il find di busybox non ha -delete, e con -exec cancella durante la visita
+# saltandone una parte: meglio raccogliere prima la lista e poi cancellare.
+ssh "$KINDLE" "find '$REMOTE_DIR' -name '._*' | xargs rm -f" 2>/dev/null || true
+echo "    copiati $(find "$BUILD" -type f | wc -l | tr -d ' ') file"
 
 step "Ripristino i permessi di esecuzione"
-# rsync su filesystem FAT puo' perdere il bit di esecuzione.
+# Su /mnt/us (filesystem FAT) i permessi possono non essere memorizzati: se il
+# chmod non attacca non e' un problema, la partizione e' montata eseguibile.
 ssh "$KINDLE" "chmod +x $REMOTE_DIR/*.sh $REMOTE_DIR/local/*.sh \
-  $REMOTE_DIR/xh $REMOTE_DIR/next-wakeup"
+  $REMOTE_DIR/xh $REMOTE_DIR/next-wakeup" 2>/dev/null \
+  || echo "    chmod non applicabile (FAT): normale, si prosegue"
 
 cat <<EOF
 

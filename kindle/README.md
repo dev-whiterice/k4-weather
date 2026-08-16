@@ -71,6 +71,36 @@ usare SSH solo per i comandi.
 `DASH_URL` in `fetch-dashboard.sh` punta gia' al branch `output` del
 repository. Va cambiato solo se rinomini il repository.
 
+### Se l'SSH va in timeout con USBNetwork attivo
+
+USBNetwork **non fa da server DHCP**. macOS collega l'interfaccia (compare come
+`RNDIS/Ethernet Gadget`), chiede un indirizzo, non riceve risposta e dopo il
+timeout ripiega su un link-local `169.254.x.x`. A quel punto non esiste alcuna
+rotta verso `192.168.15.0/24`, quindi i pacchetti per il Kindle escono dal
+Wi-Fi verso internet e muoiono lì:
+
+```sh
+ifconfig en8 | grep inet          # inet 169.254.243.126  ← sintomo
+route -n get 192.168.15.244       # interface: en0        ← esce dal Wi-Fi
+```
+
+L'indirizzo host della subnet va messo a mano:
+
+```sh
+sudo ifconfig en8 192.168.15.201 netmask 255.255.255.0
+```
+
+Il nome dell'interfaccia si ricava con:
+
+```sh
+networksetup -listallhardwareports | grep -A1 "Ethernet Gadget"
+```
+
+Va rifatto a ogni riconnessione del cavo — `install.sh` se ne accorge da solo e
+stampa il comando giusto. **Non assegnare un gateway** su questa interfaccia:
+si trova sopra il Wi-Fi nell'ordine dei servizi di rete e diventerebbe la rotta
+di default, lasciandoti senza internet.
+
 ## Prova in modalita' debug
 
 Non lanciare `start.sh` come prima cosa: con `DEBUG=true` il ciclo resta in

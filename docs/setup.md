@@ -102,18 +102,24 @@ SSH, Wi-Fi configurato. Riferimento: [wiki di
 MobileRead](https://wiki.mobileread.com/wiki/Kindle4NTHacking).
 
 ```sh
-# Runtime: kindle-dash gestisce wifi, TLS, sospensione e sveglia da RTC
-curl -L -o kindle-dash.zip \
-  https://github.com/pascalw/kindle-dash/releases/latest/download/kindle-dash.zip
-unzip kindle-dash.zip -d kindle-dash
+# Runtime: kindle-dash gestisce wifi, TLS, sospensione e sveglia da RTC.
+# L'archivio e' un .tgz che si espande piatto, quindi la cartella va creata.
+mkdir -p kindle-dash
+curl -sSL "$(curl -sSL https://api.github.com/repos/pascalw/kindle-dash/releases/latest \
+  | grep browser_download_url | cut -d'"' -f4)" | tar xz -C kindle-dash
 
 # La nostra configurazione: URL gia' impostato, non serve modificare nulla
 cp kindle/local/env.sh             kindle-dash/local/env.sh
 cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
 
-rsync -vr kindle-dash/ kindle:/mnt/us/dashboard
-ssh kindle /mnt/us/dashboard/start.sh
+rsync -vr kindle-dash/ root@192.168.15.244:/mnt/us/dashboard
+ssh root@192.168.15.244 'chmod +x /mnt/us/dashboard/*.sh /mnt/us/dashboard/local/*.sh \
+  /mnt/us/dashboard/xh /mnt/us/dashboard/next-wakeup'
 ```
+
+Prima di lanciarlo davvero, provalo in modalita' debug: resta in primo piano,
+non sospende il dispositivo e stampa tutto (vedi
+[`kindle/README.md`](../kindle/README.md#prova-in-modalita-debug)).
 
 Il Kindle si sospende dopo 10-15 secondi e si risveglia ai minuti :15 e :45,
 sfasato di 15 minuti rispetto alla generazione per assorbire il ritardo del

@@ -76,9 +76,10 @@ jobs:
 
       - name: Pubblica l'immagine
         env:
-          # Questo repo e' privato e il Kindle non sa autenticarsi, quindi
-          # l'immagine va su un repository pubblico separato. Si imposta in
-          # Settings > Secrets and variables > Actions > Variables.
+          # Di norma l'immagine va sul branch `output` di questo stesso
+          # repository, che e' pubblico perche' il Kindle non sa autenticarsi.
+          # Impostando la variabile PUBLISH_REPO si puo' dirottarla altrove,
+          # utile se un domani il codice tornasse privato.
           PUBLISH_REPO: ${{ vars.PUBLISH_REPO || github.repository }}
           PUBLISH_BRANCH: ${{ vars.PUBLISH_BRANCH || 'output' }}
           # PAT fine-grained con contents:write sul repo di destinazione.
@@ -93,8 +94,6 @@ jobs:
             echo "::error::PUBLISH_REPO punta a ${PUBLISH_REPO} ma manca il secret PUBLISH_TOKEN"
             exit 1
           fi
-          TOKEN="${PUBLISH_TOKEN:-$FALLBACK_TOKEN}"
-
           cd publish
           git init -q
           git checkout -q -b "$PUBLISH_BRANCH"
@@ -102,11 +101,34 @@ jobs:
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "dashboard $(date -u +%Y-%m-%dT%H:%MZ)"
+
           # Force push di un singolo commit senza storia: il branch resta di
           # dimensione costante invece di accumulare 48 PNG al giorno.
-          git push -qf "https://x-access-token:${TOKEN}@github.com/${PUBLISH_REPO}.git" \
-            "$PUBLISH_BRANCH"
-          echo "pubblicata su ${PUBLISH_REPO}@${PUBLISH_BRANCH}" >> "$GITHUB_STEP_SUMMARY"
+          push_with() {
+            git push -qf "https://x-access-token:$1@github.com/${PUBLISH_REPO}.git" \
+              "$PUBLISH_BRANCH"
+          }
+
+          if [ -n "$PUBLISH_TOKEN" ] && push_with "$PUBLISH_TOKEN"; then
+            echo "pubblicata su ${PUBLISH_REPO}@${PUBLISH_BRANCH} con PUBLISH_TOKEN" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Un PUBLISH_TOKEN scaduto o con i permessi sbagliati non deve
+          # congelare la dashboard: sullo stesso repository il token automatico
+          # sa scrivere lo stesso, e il guasto resta segnalato come warning.
+          if [ -n "$PUBLISH_TOKEN" ]; then
+            if [ "$PUBLISH_REPO" != "$GITHUB_REPOSITORY" ]; then
+              echo "::error::PUBLISH_TOKEN rifiutato da ${PUBLISH_REPO} e non c'e' ripiego possibile su un altro repository"
+              exit 1
+            fi
+            echo "::warning::PUBLISH_TOKEN rifiutato da ${PUBLISH_REPO}: controlla scadenza, repository access e permesso contents:write. Pubblico col token automatico, ma lo scheduler tornera' a spegnersi dopo 60 giorni di inattivita'."
+          fi
+
+          push_with "$FALLBACK_TOKEN"
+          echo "pubblicata su ${PUBLISH_REPO}@${PUBLISH_BRANCH} col token automatico" \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()

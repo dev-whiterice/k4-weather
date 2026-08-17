@@ -155,9 +155,10 @@ is automatic (`make inspect`).
 ## The indoor temperature
 
 The dashboard arrives from the cloud with a dash where the indoor temperature
-goes, and the Kindle fills it in. It has to be that way round: the sensor is on
-the device, the image is built four hundred kilometres away, and the device
-cannot authenticate anywhere to send a number back.
+goes — right of the rule that splits the temperature band, under the label
+*INTERNA* — and the Kindle fills it in. It has to be that way round: the sensor
+is on the device, the image is built four hundred kilometres away, and the
+device cannot authenticate anywhere to send a number back.
 
 **There is no ambient sensor on a Kindle 4.** The only thermometer on board is
 the one inside the battery gas gauge — the same chip `gasgauge-info` already
@@ -239,18 +240,20 @@ then writes the value on top of it with a second call.
 
 ```
 eips -g dash.png          the dashboard, dash included
-eips 4 38 "  21"          the value, in the blank left for it
+eips 42 7 "  21"          the value, in the blank left for it
 ```
 
 Those coordinates are **character cells**, not pixels: `eips` writes text on a
-fixed grid of 12×20 px cells, 50 columns by 40 rows on this panel.
-`INDOOR_TEMP_COL/ROW/CHARS` in `local/env.sh` say where, and they must match
-`INDOOR_SLOT_COL/ROW/CHARS` in `src/k4weather/model.py`, which is where the
-layout leaves the hole. Change one and you have to change the other.
+fixed grid, believed to be 12×20 px cells — 50 columns by 40 rows on this panel
+— which is what the layout reserves. `INDOOR_TEMP_COL/ROW/CHARS` in
+`local/env.sh` say where the value goes and must match `INDOOR_SLOT_COL/ROW/CHARS`
+in `src/k4weather/model.py`, which is where the hole is left. Change one and you
+have to change the other.
 
-If the number comes out a few pixels too high or too low for your taste, `ROW`
-is the knob — but then move the slot in the generator too, or the dash
-underneath will still be there next to it.
+Nothing in the documentation of `eips` states that cell size outright, so the
+first draw on a real device is also the measurement. If the number lands off
+its blank, `COL` and `ROW` are the knobs — move the slot in the generator by the
+same amount, or the dash underneath will still be sitting next to it.
 
 Two details of the wrapper worth knowing:
 

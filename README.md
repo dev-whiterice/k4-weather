@@ -26,7 +26,7 @@ Open-Meteo  ─►  data model                         wakes from RTC
                     ▼                              eips -g dashboard.png
         8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
-                    ▼                              eips 4 38 "  21"
+                    ▼                              eips 42 7 "  21"
         branch `output` ─► GitHub Pages ───────────────► │
                                                          ▼
                                                    suspend to RAM
@@ -40,8 +40,10 @@ leaves for it.
 
 ## What it shows
 
-- **Now**: temperature, condition, and — as labelled figures on the right —
-  today's high, today's low and the apparent temperature
+- **Now**: on the left of the rule everything outdoors — temperature,
+  condition, and as labelled figures today's high, today's low and the
+  apparent temperature — and on the right of it the temperature of the room,
+  which the Kindle reads from its own sensor and writes on the image itself
 - **Metric strip**: humidity, wind with direction, max UV, rain probability,
   air quality (European EAQI index)
 - **Next 24 hours**: temperature curve with the coldest and warmest hours
@@ -49,9 +51,8 @@ leaves for it.
 - **7 days**: icon, min–max range on a **shared scale** — the shape of the week
   reads from the position of the bars, without reading the numbers — plus rain
   probability and maximum wind speed
-- **Footer**: indoor temperature — written by the Kindle itself — sunrise,
-  sunset, moon phase with illumination percentage, and the time the image was
-  generated
+- **Footer**: sunrise, sunset, moon phase with illumination percentage, and the
+  time the image was generated
 
 ## Development
 
@@ -96,11 +97,13 @@ elsewhere:
   in absolute pixels computed there;
 - the blank left for the indoor temperature must fall on whole cells of the
   `eips` character grid — 12×20 px — at the coordinates the Kindle writes to.
-  Three separate declarations decide it: `INDOOR_SLOT_*` in `model.py`, the
-  footer geometry in `style.css`, and `INDOOR_TEMP_COL/ROW/CHARS` in
-  `kindle/local/env.sh`. `tests/test_kindle.py` compares the first and the
-  third, and a browser measurement in `tests/test_render.py` checks that the
-  slot really lands where it should.
+  `INDOOR_SLOT_*` in `model.py` and `INDOOR_TEMP_COL/ROW/CHARS` in
+  `kindle/local/env.sh` say the same thing twice, once per machine;
+  `tests/test_kindle.py` compares them. The slot is the only element on the
+  page positioned in absolute page pixels, and everything drawn around it —
+  label, degree sign, dividing rule — hangs off that one rectangle, so a
+  browser measurement in `tests/test_render.py` is enough to know the whole
+  block is where it should be.
 
 ## Kindle 4 constraints that explain the choices
 

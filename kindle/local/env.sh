@@ -57,6 +57,6 @@ export INDOOR_TEMP_MAX=${INDOOR_TEMP_MAX:-50}
 # Where it goes, on the 12x20 px character grid of eips (50 columns by 40 rows
 # on this panel). Must match INDOOR_SLOT_COL/ROW/CHARS in
 # src/k4weather/model.py, which is where the layout leaves the hole.
-export INDOOR_TEMP_COL=${INDOOR_TEMP_COL:-4}
-export INDOOR_TEMP_ROW=${INDOOR_TEMP_ROW:-38}
+export INDOOR_TEMP_COL=${INDOOR_TEMP_COL:-42}
+export INDOOR_TEMP_ROW=${INDOOR_TEMP_ROW:-7}
 export INDOOR_TEMP_CHARS=${INDOOR_TEMP_CHARS:-4}

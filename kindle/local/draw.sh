@@ -26,8 +26,8 @@ esac
 # No reading, no drawing: the dash the image carries stays, and says so.
 value=$("$DIR/indoor-temp.sh") || exit "$status"
 
-col=${INDOOR_TEMP_COL:-4}
-row=${INDOOR_TEMP_ROW:-38}
+col=${INDOOR_TEMP_COL:-42}
+row=${INDOOR_TEMP_ROW:-7}
 chars=${INDOOR_TEMP_CHARS:-4}
 
 # Right-aligned in its slot, hard against the degree sign the image already

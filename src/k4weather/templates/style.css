@@ -38,14 +38,15 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
 
-  /* header, current, metrics, hourly, daily (elastic), footer.
-     The footer is 61px and not the 48px the content asks for so that its
-     centre line falls on y=770: that is the middle of row 38 of the eips
-     character grid, where the Kindle writes the indoor temperature. Fixed
-     whether the feature is on or off, so that turning it on does not reshape
-     the page. */
+  /* header, current, metrics, hourly, daily (elastic), footer */
   display: grid;
-  grid-template-rows: 52px 190px 58px 162px 1fr 61px;
+  grid-template-rows: 52px 190px 58px 162px 1fr 48px;
+
+  /* The origin the indoor slot is positioned from: the coordinates model.py
+     computes are pixels of the final PNG, and this makes them mean that. No
+     element between here and that slot may be positioned, or they would start
+     meaning something else. */
+  position: relative;
 }
 
 section {
@@ -147,6 +148,83 @@ svg {
   display: block;
   margin-top: 1px;
   font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+/* Names the two halves of the band: everything outdoors on the left of the
+   rule, the room on the right of it. */
+.group-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.now-main .group-label {
+  margin-bottom: 7px;
+}
+
+/* ----------------------------------------------------- indoor temperature */
+
+/* The room's temperature is not rendered here: the Kindle writes it in the
+   bitmap font of `eips`, which puts text on a fixed grid of 12x20 px cells.
+   This box is the hole left for it, and its position comes straight from
+   INDOOR_SLOT_* in model.py, in pixels of the final PNG — hence the absolute
+   placement against `body`. Everything else in this block hangs off it, so
+   there is exactly one number to get right.
+
+   The room is a different kind of reading from the forecast, and it is drawn
+   by a different machine, in a different typeface: rather than hide that, the
+   layout gives it its own column, its own label and a rule of its own. */
+.current.split {
+  /* Keeps the flex row clear of the rule, at the same 24px the readout keeps
+     on the other side of it. */
+  padding-right: 145px;
+}
+
+.indoor-slot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  /* Right-aligned against the degree sign: the Kindle pads the value with
+     blanks, so two and three digits both end in the same place. */
+  justify-content: flex-end;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The divider between the two halves, 24px to the left of the slot. It spans
+   the content box of the band — 158px starting 72px above the slot — so the
+   split reads as architecture rather than as an afterthought. */
+.indoor-rule {
+  position: absolute;
+  right: calc(100% + 24px);
+  top: -72px;
+  width: 1px;
+  height: 158px;
+  background: var(--rule);
+}
+
+.indoor-label {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 7px);
+}
+
+/* Sized against the bitmap digits it sits next to, not against the rest of the
+   page: an eips cell is 20px tall and its glyphs fill most of it. */
+.indoor-deg {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
@@ -408,34 +486,6 @@ svg {
 
 .foot-note {
   color: var(--ink-3);
-  white-space: nowrap;
-}
-
-/* The indoor temperature is drawn on the device, in the bitmap font of `eips`,
-   into the blank left by `.indoor-slot`. Everything here exists to put that
-   blank on a whole character cell of the 12x20 px grid that program uses:
-   22px of section padding, plus a 15px icon, plus this margin, land its left
-   edge on x=48 — column 4, the INDOOR_SLOT_COL of model.py. Change any of the
-   three and the number lands somewhere else. */
-.indoor {
-  gap: 0;
-}
-
-.indoor-slot {
-  margin-left: 11px;
-  display: flex;
-  align-items: center;
-  /* The value is right-aligned against the degree sign, so a two-digit and a
-     three-digit reading both end in the same place. */
-  justify-content: flex-end;
-  color: var(--ink);
-}
-
-/* Sized against the bitmap digits that land next to it, not against the rest
-   of the footer: an eips cell is 20px tall and its glyphs fill most of it. */
-.indoor-deg {
-  font-size: 13px;
-  color: var(--ink);
 }
 
 .stale {

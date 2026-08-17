@@ -42,12 +42,13 @@ STALE_AFTER = timedelta(minutes=90)
 # is leave a hole of exactly the right size in exactly the right place.
 EIPS_CELL_WIDTH = 12
 EIPS_CELL_HEIGHT = 20
-# Position and width of that hole, in cells. These three numbers must match
-# INDOOR_TEMP_COL/ROW/CHARS in `kindle/local/env.sh`: the Kindle writes at those
-# coordinates and nothing here can tell it otherwise. `tests/test_kindle.py`
-# keeps the two sides in step.
-INDOOR_SLOT_COL = 4
-INDOOR_SLOT_ROW = 38
+# Position and width of that hole, in cells: the right-hand column of the
+# current-conditions block, level with the figures that qualify the outdoor
+# temperature. These three numbers must match INDOOR_TEMP_COL/ROW/CHARS in
+# `kindle/local/env.sh`: the Kindle writes at those coordinates and nothing here
+# can tell it otherwise. `tests/test_kindle.py` keeps the two sides in step.
+INDOOR_SLOT_COL = 42
+INDOOR_SLOT_ROW = 7
 # Four cells for at most three characters: the Kindle right-aligns the value
 # and pads it with blanks, and that leading blank is what stops `eips` from
 # reading a temperature below zero as an option of its own.

@@ -19,11 +19,14 @@
   <div class="date">{{ d.date_long }}</div>
 </section>
 
-{# Current conditions: icon, temperature, and the three figures that qualify
-   it — today's high and low, and what the air actually feels like. #}
-<section class="current">
+{# Current conditions. Everything outdoors sits on the left of the rule — the
+   temperature, what it feels like, the day's high and low — and the reading
+   that comes from inside the room sits on the right of it, so the two can
+   never be mistaken for one another. #}
+<section class="current{% if d.indoor %} split{% endif %}">
   <div class="now-icon">{{ icon(d.icon) }}</div>
   <div class="now-main">
+    <div class="group-label">esterna</div>
     <div class="temp">{{ d.temperature }}<span class="deg">°</span></div>
     <div class="condition">{{ d.condition }}</div>
   </div>
@@ -41,6 +44,21 @@
       <span class="range-val">{{ d.apparent }}</span>
     </div>
   </div>
+
+  {#- The indoor temperature. The Kindle writes the number itself, with eips,
+      into this box: the sensor is on the device and this image is built in the
+      cloud. It is the one element on the page whose position has to be exact
+      to the pixel — eips writes on a fixed character grid — so it carries the
+      coordinates model.py computed, and the rule, the label and the degree
+      sign hang off it instead of being laid out beside it. The dash is what
+      shows until the device fills it in, or if its sensor cannot be read. #}
+  {%- if d.indoor %}
+  <div class="indoor-slot" style="left: {{ d.indoor.x }}px; top: {{ d.indoor.y }}px;
+       width: {{ d.indoor.width }}px; height: {{ d.indoor.height }}px"
+  ><i class="indoor-rule"></i
+  ><span class="group-label indoor-label">interna</span
+  ><span class="indoor-deg">°</span>–</div>
+  {%- endif %}
 </section>
 
 <section class="metrics">
@@ -113,19 +131,6 @@
 
 <section class="footer">
   <div class="foot-left">
-    {#- Indoor temperature: the Kindle stamps the number into `.indoor-slot`
-        with eips, because the sensor is on the device and this image is not.
-        First in the row on purpose — the slot has to land on a whole eips
-        character cell, and here its x depends on nothing but the padding of
-        the section and the width of the icon. #}
-    {%- if d.indoor %}
-    <div class="foot-item indoor">
-      {{ icon('indoor') }}
-      <span class="indoor-slot"
-            style="width: {{ d.indoor.width }}px; height: {{ d.indoor.height }}px">–</span
-      ><span class="indoor-deg">°</span>
-    </div>
-    {%- endif %}
     {%- if d.sunrise %}
     <div class="foot-item">{{ icon('sunrise') }}<span>{{ d.sunrise }}</span></div>
     <div class="foot-item">{{ icon('sunset') }}<span>{{ d.sunset }}</span></div>

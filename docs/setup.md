@@ -166,6 +166,7 @@ eips -f -g /tmp/test.png
 | The screen shows a time frozen days ago | Scheduler disabled after 60 days of inactivity: see step 4 |
 | *dati non aggiornati* in the footer | The image is fresh but the Open-Meteo observation is more than 90 minutes old |
 | The indoor temperature stays a dash | The sensor is unreadable or the reading is out of range: `local/indoor-temp.sh --probe` on the device says which |
+| The indoor temperature lands off its blank | `eips` does not use the 12×20 px cell the layout assumes: adjust `INDOOR_TEMP_COL/ROW` and `INDOOR_SLOT_COL/ROW` together |
 | The indoor temperature reads too high | Normal before calibration: it is the battery, not the room. See [`kindle/README.md`](../kindle/README.md#calibrating-the-offset) |
 | Ghosting on the screen | `FULL_DISPLAY_REFRESH_RATE` in `kindle/local/env.sh`: lower it to do full refreshes more often |
 | Battery draining too fast | Restrict `REFRESH_SCHEDULE` to daytime hours, for example `"15,45 7-23 * * *"` |

@@ -113,6 +113,19 @@
 
 <section class="footer">
   <div class="foot-left">
+    {#- Indoor temperature: the Kindle stamps the number into `.indoor-slot`
+        with eips, because the sensor is on the device and this image is not.
+        First in the row on purpose — the slot has to land on a whole eips
+        character cell, and here its x depends on nothing but the padding of
+        the section and the width of the icon. #}
+    {%- if d.indoor %}
+    <div class="foot-item indoor">
+      {{ icon('indoor') }}
+      <span class="indoor-slot"
+            style="width: {{ d.indoor.width }}px; height: {{ d.indoor.height }}px">–</span
+      ><span class="indoor-deg">°</span>
+    </div>
+    {%- endif %}
     {%- if d.sunrise %}
     <div class="foot-item">{{ icon('sunrise') }}<span>{{ d.sunrise }}</span></div>
     <div class="foot-item">{{ icon('sunset') }}<span>{{ d.sunset }}</span></div>

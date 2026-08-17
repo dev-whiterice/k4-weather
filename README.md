@@ -26,12 +26,17 @@ Open-Meteo  ─►  data model                         wakes from RTC
                     ▼                              eips -g dashboard.png
         8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
-                    ▼                              suspend to RAM
-        branch `output` ─► GitHub Pages ───────────────►
+                    ▼                              eips 4 38 "  21"
+        branch `output` ─► GitHub Pages ───────────────► │
+                                                         ▼
+                                                   suspend to RAM
 ```
 
 The Kindle is kept deliberately dumb: it downloads an image and draws it. All
 the logic lives in CI, where it is easy to test and to look at in a browser.
+The one exception is the indoor temperature, which no server can know: the
+device reads its own sensor and writes the number into a blank the layout
+leaves for it.
 
 ## What it shows
 
@@ -44,8 +49,9 @@ the logic lives in CI, where it is easy to test and to look at in a browser.
 - **7 days**: icon, min–max range on a **shared scale** — the shape of the week
   reads from the position of the bars, without reading the numbers — plus rain
   probability and maximum wind speed
-- **Footer**: sunrise, sunset, moon phase with illumination percentage, and the
-  time the image was generated
+- **Footer**: indoor temperature — written by the Kindle itself — sunrise,
+  sunset, moon phase with illumination percentage, and the time the image was
+  generated
 
 ## Development
 
@@ -75,15 +81,26 @@ and tests are reproducible and never touch the network.
 | `src/k4weather/render.py` | Jinja template → HTML → Chromium screenshot |
 | `src/k4weather/postprocess.py` | conversion and validation for `eips` |
 | `src/k4weather/templates/` | HTML, CSS, SVG icons, Inter fonts |
-| `kindle/` | configuration for the client on the device |
+| `kindle/local/` | what runs on the device: download, sensor, drawing |
+| `kindle/install.sh` | installs the runtime on the Kindle, configured |
 
 The API payloads are treated as untrusted: every series is read through a
 bounds-checked helper, so a missing or truncated array degrades to a dash on
 screen instead of costing a whole refresh cycle.
 
-One coupling worth knowing about: the width of the min–max track in
-`style.css` (`.day` grid) must match `DAY_BAR_WIDTH` in `model.py`, because the
-bar inside the track is positioned in absolute pixels computed there.
+Two couplings worth knowing about, both between the CSS and a number computed
+elsewhere:
+
+- the width of the min–max track in `style.css` (`.day` grid) must match
+  `DAY_BAR_WIDTH` in `model.py`, because the bar inside the track is positioned
+  in absolute pixels computed there;
+- the blank left for the indoor temperature must fall on whole cells of the
+  `eips` character grid — 12×20 px — at the coordinates the Kindle writes to.
+  Three separate declarations decide it: `INDOOR_SLOT_*` in `model.py`, the
+  footer geometry in `style.css`, and `INDOOR_TEMP_COL/ROW/CHARS` in
+  `kindle/local/env.sh`. `tests/test_kindle.py` compares the first and the
+  third, and a browser measurement in `tests/test_render.py` checks that the
+  slot really lands where it should.
 
 ## Kindle 4 constraints that explain the choices
 
@@ -141,9 +158,11 @@ The workflow also supports publishing to a different repository through the
 ## Roadmap
 
 - [x] Phase 1 — fixed location in `config.yaml`
+- [x] Indoor temperature from the Kindle's own sensor, overlaid with `eips`
+      client side — see [`kindle/README.md`](kindle/README.md)
 - [ ] Phase 2 — dynamic location (several locations, search by name through
       Open-Meteo geocoding, selection from a secret)
-- [ ] Kindle battery level overlaid on screen with `eips`, client side
+- [ ] Kindle battery level on screen, through the same overlay
 - [ ] Fallback image with an explicit banner when the API does not answer
 
 ## Licence

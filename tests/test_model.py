@@ -1,11 +1,17 @@
 """The model layer: rounding, chart geometry and tolerance to broken payloads."""
 
 import copy
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from k4weather.model import (
     CHART_WIDTH,
     DAY_BAR_WIDTH,
+    EIPS_CELL_HEIGHT,
+    EIPS_CELL_WIDTH,
+    INDOOR_SLOT_CHARS,
+    INDOOR_SLOT_COL,
+    INDOOR_SLOT_ROW,
     MIN_DAY_BAR_WIDTH,
     STALE_AFTER,
     build_dashboard,
@@ -177,3 +183,23 @@ def test_day_at_the_top_of_the_scale_still_shows_a_bar(forecast, cfg):
     d = build_dashboard(peaked, None, cfg, now=_at_fixture_time(forecast))
     assert d.days[0].bar_width >= MIN_DAY_BAR_WIDTH
     assert d.days[0].bar_x + d.days[0].bar_width <= DAY_BAR_WIDTH + 0.01
+
+
+def test_no_indoor_slot_unless_the_feature_is_on(forecast, cfg):
+    # On any screen other than the Kindle nobody would ever fill it in.
+    d = build_dashboard(forecast, None, cfg, now=_at_fixture_time(forecast))
+    assert d.indoor is None
+
+
+def test_indoor_slot_is_a_whole_number_of_eips_cells(forecast, cfg):
+    """The Kindle writes in character cells; the layout has to reserve them."""
+    cfg = replace(cfg, features=replace(cfg.features, indoor_temperature=True))
+    d = build_dashboard(forecast, None, cfg, now=_at_fixture_time(forecast))
+
+    assert d.indoor.x == INDOOR_SLOT_COL * EIPS_CELL_WIDTH
+    assert d.indoor.y == INDOOR_SLOT_ROW * EIPS_CELL_HEIGHT
+    assert d.indoor.width == INDOOR_SLOT_CHARS * EIPS_CELL_WIDTH
+    assert d.indoor.height == EIPS_CELL_HEIGHT
+    # The whole slot has to fit on the panel, cells and all.
+    assert d.indoor.x + d.indoor.width <= cfg.display.width
+    assert d.indoor.y + d.indoor.height <= cfg.display.height

@@ -35,6 +35,24 @@ MIN_DAY_BAR_WIDTH = 10.0
 # itself out of date.
 STALE_AFTER = timedelta(minutes=90)
 
+# The indoor temperature is the one number this program cannot render: the
+# sensor is on the Kindle and the image is built in the cloud. The device draws
+# it itself with `eips`, which writes text on a fixed character grid — cells of
+# 12x20 px, so 50 columns by 40 rows on this panel — and all the layout can do
+# is leave a hole of exactly the right size in exactly the right place.
+EIPS_CELL_WIDTH = 12
+EIPS_CELL_HEIGHT = 20
+# Position and width of that hole, in cells. These three numbers must match
+# INDOOR_TEMP_COL/ROW/CHARS in `kindle/local/env.sh`: the Kindle writes at those
+# coordinates and nothing here can tell it otherwise. `tests/test_kindle.py`
+# keeps the two sides in step.
+INDOOR_SLOT_COL = 4
+INDOOR_SLOT_ROW = 38
+# Four cells for at most three characters: the Kindle right-aligns the value
+# and pads it with blanks, and that leading blank is what stops `eips` from
+# reading a temperature below zero as an option of its own.
+INDOOR_SLOT_CHARS = 4
+
 # On-screen copy is Italian on purpose: the panel hangs on an Italian wall.
 # Only code comments and documentation are in English.
 GIORNI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
@@ -128,6 +146,19 @@ class DayRow:
 
 
 @dataclass
+class EipsSlot:
+    """A rectangle the layout leaves blank for text the Kindle draws itself.
+
+    In pixels of the final PNG, so the template can place it directly.
+    """
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass
 class Dashboard:
     """Everything the template needs, in the order it is rendered."""
 
@@ -165,6 +196,9 @@ class Dashboard:
     moon_name: str = ""
     moon_illumination: str = ""
     stale: bool = False
+    # None when the indoor temperature is off: the footer then has no slot for
+    # it, rather than an empty one.
+    indoor: EipsSlot | None = None
 
 
 def _parse_local(value: str) -> datetime:
@@ -354,6 +388,16 @@ def _build_metrics(
     return metrics
 
 
+def _indoor_slot() -> EipsSlot:
+    """The blank the Kindle writes the indoor temperature into, in pixels."""
+    return EipsSlot(
+        x=INDOOR_SLOT_COL * EIPS_CELL_WIDTH,
+        y=INDOOR_SLOT_ROW * EIPS_CELL_HEIGHT,
+        width=INDOOR_SLOT_CHARS * EIPS_CELL_WIDTH,
+        height=EIPS_CELL_HEIGHT,
+    )
+
+
 def build_dashboard(
     forecast: dict[str, Any],
     air_quality: dict[str, Any] | None,
@@ -429,4 +473,5 @@ def build_dashboard(
         moon_name=moon_name,
         moon_illumination=moon_illum,
         stale=stale,
+        indoor=_indoor_slot() if cfg.features.indoor_temperature else None,
     )

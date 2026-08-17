@@ -61,6 +61,9 @@ class Features:
     air_quality: bool = True
     moon_phase: bool = True
     sun_times: bool = True
+    # Off by default: the value is written by the Kindle itself, so on any
+    # other screen the slot would stay empty for ever. See kindle/README.md.
+    indoor_temperature: bool = False
 
 
 @dataclass(frozen=True)

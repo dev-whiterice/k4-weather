@@ -42,8 +42,22 @@ curl -sSfL "$asset" | tar xz -C "$BUILD"
 step "Applying the k4-weather configuration"
 cp "$HERE/local/env.sh" "$BUILD/local/env.sh"
 cp "$HERE/local/fetch-dashboard.sh" "$BUILD/local/fetch-dashboard.sh"
+cp "$HERE/local/indoor-temp.sh" "$BUILD/local/indoor-temp.sh"
+cp "$HERE/local/draw.sh" "$BUILD/local/draw.sh"
 url="$(grep -m1 '^DASH_URL=' "$BUILD/local/fetch-dashboard.sh" | cut -d'"' -f2)"
 echo "    image source: $url"
+
+# The indoor temperature exists only on the device, and kindle-dash has no hook
+# that runs once the screen is up: it calls /usr/sbin/eips inline. Rewriting
+# those call sites to our wrapper is the smallest change that creates one — it
+# draws the image first, then stamps the value on top of it.
+sed -i.bak 's|/usr/sbin/eips|"$DIR/local/draw.sh"|g' "$BUILD/dash.sh"
+rm -f "$BUILD/dash.sh.bak"
+patched="$(grep -c 'local/draw.sh' "$BUILD/dash.sh" || true)"
+[ "$patched" -ge 2 ] || fail "dash.sh no longer calls /usr/sbin/eips: kindle-dash
+    has changed and the overlay needs rewiring. To install without it, drop the
+    two sed lines from this script and set INDOOR_TEMP=false in local/env.sh."
+echo "    indoor temperature: $patched eips call sites routed through local/draw.sh"
 
 step "Checking that the image is reachable"
 # Better to find out now that the URL is wrong, than in front of an e-ink

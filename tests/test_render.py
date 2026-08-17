@@ -4,6 +4,9 @@ from datetime import datetime
 
 import pytest
 
+from dataclasses import replace
+
+from k4weather import model
 from k4weather.model import build_dashboard
 from k4weather.postprocess import to_eink_png, validate
 from k4weather.render import build_html, html_to_png
@@ -46,6 +49,43 @@ def test_inline_svg_is_not_escaped(html):
 
 def test_jinja_comments_do_not_reach_the_output(html):
     assert "{#" not in html and "#}" not in html
+
+
+@pytest.mark.slow
+def test_the_indoor_slot_lands_on_the_eips_character_grid(forecast, cfg):
+    """The blank left for the Kindle has to be where the Kindle writes.
+
+    Everything about that position is implicit in the CSS — the padding of the
+    footer, the width of the icon, the height of the band — so measuring it in
+    a real browser is the only way to know it is still true.
+    """
+    from playwright.sync_api import sync_playwright
+
+    cfg = replace(cfg, features=replace(cfg.features, indoor_temperature=True))
+    now = datetime.fromisoformat(forecast["current"]["time"])
+    page_html = build_html(build_dashboard(forecast, None, cfg, now=now), cfg)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(
+                viewport={"width": cfg.display.width, "height": cfg.display.height}
+            ).new_page()
+            page.set_content(page_html, wait_until="load")
+            page.evaluate("() => document.fonts.ready")
+            box = page.evaluate(
+                "() => {const r = document.querySelector('.indoor-slot')"
+                ".getBoundingClientRect(); return [r.x, r.y, r.width, r.height];}"
+            )
+        finally:
+            browser.close()
+
+    assert box == [
+        model.INDOOR_SLOT_COL * model.EIPS_CELL_WIDTH,
+        model.INDOOR_SLOT_ROW * model.EIPS_CELL_HEIGHT,
+        model.INDOOR_SLOT_CHARS * model.EIPS_CELL_WIDTH,
+        model.EIPS_CELL_HEIGHT,
+    ]
 
 
 @pytest.mark.slow

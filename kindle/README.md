@@ -1,11 +1,18 @@
 # The client on the Kindle 4
 
-The Kindle computes nothing: it wakes up, downloads a PNG, draws it and goes
-back to sleep. All the fragile parts — waiting for Wi-Fi, modern TLS, suspend
-to RAM, wake-up scheduled by the hardware clock — are already solved by
+The Kindle computes almost nothing: it wakes up, downloads a PNG, draws it,
+writes its own temperature on top of it and goes back to sleep. All the fragile
+parts — waiting for Wi-Fi, modern TLS, suspend to RAM, wake-up scheduled by the
+hardware clock — are already solved by
 [pascalw/kindle-dash](https://github.com/pascalw/kindle-dash), used here as the
-runtime. This directory holds only the two configuration files that replace its
-own.
+runtime. This directory holds the four files that replace or extend its own:
+
+| File | Role |
+|---|---|
+| `local/env.sh` | configuration of the loop, and of everything below |
+| `local/fetch-dashboard.sh` | the download, with retries |
+| `local/indoor-temp.sh` | the temperature sensor, read and calibrated |
+| `local/draw.sh` | `eips` plus the temperature stamped on top |
 
 ## What `kindle-dash` actually does
 
@@ -63,9 +70,13 @@ mkdir -p kindle-dash
 curl -sSL "$(curl -sSL https://api.github.com/repos/pascalw/kindle-dash/releases/latest \
   | grep browser_download_url | cut -d'"' -f4 | head -n1)" | tar xz -C kindle-dash
 
-# 2. Replace the example configuration with ours
+# 2. Replace the example configuration with ours, and route the drawing
+#    through our wrapper (see "The indoor temperature" below)
 cp kindle/local/env.sh             kindle-dash/local/env.sh
 cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
+cp kindle/local/indoor-temp.sh     kindle-dash/local/indoor-temp.sh
+cp kindle/local/draw.sh            kindle-dash/local/draw.sh
+sed -i.bak 's|/usr/sbin/eips|"$DIR/local/draw.sh"|g' kindle-dash/dash.sh
 
 # 3. Copy to the Kindle (USBNetwork on, cable connected)
 rsync -vr kindle-dash/ root@192.168.15.244:/mnt/us/dashboard
@@ -127,8 +138,11 @@ cd /mnt/us/dashboard
 ./local/fetch-dashboard.sh /tmp/test.png && echo OK && ls -l /tmp/test.png
 ./xh --version                    # must run: it is a static ARM binary
 
-# Then the drawing
-eips -f -g /tmp/test.png
+# The sensor, without touching the screen either
+./local/indoor-temp.sh --probe
+
+# Then the drawing, temperature included
+. ./local/env.sh && ./local/draw.sh -f -g /tmp/test.png
 
 # Finally the whole loop, in the foreground
 DEBUG=true ./start.sh
@@ -137,6 +151,113 @@ DEBUG=true ./start.sh
 If the image comes out **skewed or squashed**, the PNG is not grayscale: `eips`
 only accepts 8-bit gray with no alpha channel. On the generator side that check
 is automatic (`make inspect`).
+
+## The indoor temperature
+
+The dashboard arrives from the cloud with a dash where the indoor temperature
+goes, and the Kindle fills it in. It has to be that way round: the sensor is on
+the device, the image is built four hundred kilometres away, and the device
+cannot authenticate anywhere to send a number back.
+
+**There is no ambient sensor on a Kindle 4.** The only thermometer on board is
+the one inside the battery gas gauge — the same chip `gasgauge-info` already
+answers for the battery level — and it measures the pack, not the room. That
+makes it usable as a room thermometer only because of how this panel lives:
+suspended to RAM for 29 minutes out of every 30, awake for a handful of
+seconds, never charging. Self-heating is therefore small and, more importantly,
+**constant**, which is exactly what an offset can absorb.
+
+What you get: about half a degree of resolution (the utility answers in whole
+degrees Fahrenheit), a lag of a few hours behind a real change in the room, and
+an accuracy that depends entirely on the calibration below. Good enough to see
+that the living room is at 19 and not 23. Not a laboratory instrument.
+
+### Does this device have it at all
+
+```sh
+/mnt/us/dashboard/local/indoor-temp.sh --probe
+```
+
+It prints what `gasgauge-info -k` answers, lists every sysfs file on the device
+that looks like a thermometer, and ends with the reading it would draw. If the
+first section is an error and the second is empty, the feature is not available
+on this device: set `INDOOR_TEMP=false` in `local/env.sh` and the dashboard
+keeps its dash. If instead the probe turns up a sysfs file with a finer
+resolution than whole Fahrenheit, point `INDOOR_TEMP_CMD` and
+`INDOOR_TEMP_UNIT` at it:
+
+```sh
+export INDOOR_TEMP_CMD="cat /sys/class/power_supply/max170xx_battery/temp"
+export INDOOR_TEMP_UNIT=dC        # F, C, dC (tenths), mC (thousandths)
+```
+
+### Calibrating the offset
+
+The reading sits **above** the room, so the offset is almost always negative.
+Measure it once, in place, and only in place:
+
+1. Hang the panel where it will live and let the normal cycle run for a few
+   hours — not straight after a charge, which leaves the pack warm for a long
+   time, and not right after moving it from another room.
+2. Read what the sensor says, uncalibrated:
+
+   ```sh
+   /mnt/us/dashboard/local/indoor-temp.sh --raw      # e.g. 23.4
+   ```
+
+3. Read a thermometer you trust, next to the Kindle, at the same moment.
+4. Set the difference in `local/env.sh`:
+
+   ```sh
+   # thermometer 21.0, Kindle 23.4  ->  21.0 - 23.4
+   export INDOOR_TEMP_OFFSET=${INDOOR_TEMP_OFFSET:--2.4}
+   ```
+
+5. Check the result, and the whole conversion behind it:
+
+   ```sh
+   . /mnt/us/dashboard/local/env.sh
+   /mnt/us/dashboard/local/indoor-temp.sh --debug
+   # source=gasgauge-info -k unit=F raw=23.4C offset=-2.4C calibrated=21.0C drawn=21 …
+   ```
+
+Redo it if you move the panel: the offset is a property of that wall, that
+enclosure and that duty cycle, not of the device. Two figures far apart —
+say more than 5 °C — mean something else is wrong: the device had just woken
+from a charge, or the sensor is not the one you think it is.
+
+Readings outside `INDOOR_TEMP_MIN`..`INDOOR_TEMP_MAX` (−10..50 °C) are treated
+as a broken sensor: nothing is drawn and the dash stays. On a wall, no number
+beats a wrong one.
+
+### How the number gets on screen
+
+`kindle-dash` calls `/usr/sbin/eips` inline and offers no hook that runs once
+the screen is up, so the installer rewrites those call sites to
+`local/draw.sh`, a drop-in wrapper: it draws the image with the real `eips`,
+then writes the value on top of it with a second call.
+
+```
+eips -g dash.png          the dashboard, dash included
+eips 4 38 "  21"          the value, in the blank left for it
+```
+
+Those coordinates are **character cells**, not pixels: `eips` writes text on a
+fixed grid of 12×20 px cells, 50 columns by 40 rows on this panel.
+`INDOOR_TEMP_COL/ROW/CHARS` in `local/env.sh` say where, and they must match
+`INDOOR_SLOT_COL/ROW/CHARS` in `src/k4weather/model.py`, which is where the
+layout leaves the hole. Change one and you have to change the other.
+
+If the number comes out a few pixels too high or too low for your taste, `ROW`
+is the knob — but then move the slot in the generator too, or the dash
+underneath will still be there next to it.
+
+Two details of the wrapper worth knowing:
+
+- **the sleeping screen gets nothing.** It is not the dashboard and has no slot.
+- **a failed refresh gets nothing either.** When the download fails,
+  `kindle-dash` leaves the previous image on screen; writing a fresh number
+  over a stale dashboard would be the one genuinely misleading combination.
 
 ## The real start
 

@@ -38,9 +38,14 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
 
-  /* header, current, metrics, hourly, daily (elastic), footer */
+  /* header, current, metrics, hourly, daily (elastic), footer.
+     The footer is 61px and not the 48px the content asks for so that its
+     centre line falls on y=770: that is the middle of row 38 of the eips
+     character grid, where the Kindle writes the indoor temperature. Fixed
+     whether the feature is on or off, so that turning it on does not reshape
+     the page. */
   display: grid;
-  grid-template-rows: 52px 190px 58px 162px 1fr 48px;
+  grid-template-rows: 52px 190px 58px 162px 1fr 61px;
 }
 
 section {
@@ -403,6 +408,34 @@ svg {
 
 .foot-note {
   color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* The indoor temperature is drawn on the device, in the bitmap font of `eips`,
+   into the blank left by `.indoor-slot`. Everything here exists to put that
+   blank on a whole character cell of the 12x20 px grid that program uses:
+   22px of section padding, plus a 15px icon, plus this margin, land its left
+   edge on x=48 — column 4, the INDOOR_SLOT_COL of model.py. Change any of the
+   three and the number lands somewhere else. */
+.indoor {
+  gap: 0;
+}
+
+.indoor-slot {
+  margin-left: 11px;
+  display: flex;
+  align-items: center;
+  /* The value is right-aligned against the degree sign, so a two-digit and a
+     three-digit reading both end in the same place. */
+  justify-content: flex-end;
+  color: var(--ink);
+}
+
+/* Sized against the bitmap digits that land next to it, not against the rest
+   of the footer: an eips cell is 20px tall and its glyphs fill most of it. */
+.indoor-deg {
+  font-size: 13px;
+  color: var(--ink);
 }
 
 .stale {

@@ -127,6 +127,11 @@ curl -sSL "$(curl -sSL https://api.github.com/repos/pascalw/kindle-dash/releases
 # Our configuration: the URL is already set, nothing to edit
 cp kindle/local/env.sh             kindle-dash/local/env.sh
 cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
+cp kindle/local/indoor-temp.sh     kindle-dash/local/indoor-temp.sh
+cp kindle/local/draw.sh            kindle-dash/local/draw.sh
+
+# The drawing goes through our wrapper, which adds the indoor temperature
+sed -i.bak 's|/usr/sbin/eips|"$DIR/local/draw.sh"|g' kindle-dash/dash.sh
 
 rsync -vr kindle-dash/ root@192.168.15.244:/mnt/us/dashboard
 ssh root@192.168.15.244 'chmod +x /mnt/us/dashboard/*.sh /mnt/us/dashboard/local/*.sh \
@@ -145,6 +150,7 @@ minutes from generation to absorb the delay of the GitHub Actions cron.
 ```sh
 ssh kindle
 /mnt/us/dashboard/local/fetch-dashboard.sh /tmp/test.png && echo OK
+/mnt/us/dashboard/local/indoor-temp.sh --probe          # the sensor
 eips -f -g /tmp/test.png
 ```
 
@@ -159,6 +165,8 @@ eips -f -g /tmp/test.png
 | `fetch-dashboard.sh` exits with an error | No Wi-Fi, or the wrong URL. The screen keeps the last good image instead of going blank |
 | The screen shows a time frozen days ago | Scheduler disabled after 60 days of inactivity: see step 4 |
 | *dati non aggiornati* in the footer | The image is fresh but the Open-Meteo observation is more than 90 minutes old |
+| The indoor temperature stays a dash | The sensor is unreadable or the reading is out of range: `local/indoor-temp.sh --probe` on the device says which |
+| The indoor temperature reads too high | Normal before calibration: it is the battery, not the room. See [`kindle/README.md`](../kindle/README.md#calibrating-the-offset) |
 | Ghosting on the screen | `FULL_DISPLAY_REFRESH_RATE` in `kindle/local/env.sh`: lower it to do full refreshes more often |
 | Battery draining too fast | Restrict `REFRESH_SCHEDULE` to daytime hours, for example `"15,45 7-23 * * *"` |
 

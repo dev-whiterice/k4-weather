@@ -1,140 +1,153 @@
 # k4-weather
 
-Dashboard meteo per **Kindle 4 non-touch jailbroken**: GitHub Actions genera
-ogni 30 minuti un PNG 600×800 in scala di grigi partendo dalle API di
-[Open-Meteo](https://open-meteo.com), il Kindle lo scarica e lo mostra con
-`eips`. Nessun server da mantenere.
+Weather dashboard for a **jailbroken non-touch Kindle 4**: every 30 minutes
+GitHub Actions renders a 600×800 grayscale PNG from the
+[Open-Meteo](https://open-meteo.com) API, the Kindle downloads it and draws it
+with `eips`. No server to keep alive.
 
-![anteprima](docs/preview.png)
+![preview](docs/preview.png)
 
-## Come funziona
+> The on-screen copy is in Italian on purpose — the panel hangs on an Italian
+> wall. Code, comments and documentation are in English.
+
+## How it works
 
 ```
-GitHub Actions (ogni 30 min)                       Kindle 4 (ogni 30 min)
+GitHub Actions (every 30 min)                      Kindle 4 (every 30 min)
 ──────────────────────────────                     ──────────────────────
-Open-Meteo  ─►  modello dati                       sveglia da RTC
+Open-Meteo  ─►  data model                         wakes from RTC
                     │                                    │
-                    ▼                              attende il wifi
+                    ▼                              waits for wifi
              HTML + CSS + SVG                            │
                     │                                    ▼
                     ▼                              xh get dashboard.png
-          Chromium headless (screenshot)                 │
+          headless Chromium (screenshot)                 │
                     │                                    ▼
                     ▼                              eips -g dashboard.png
-      grigio 8 bit, 16 livelli, 600×800                  │
+        8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
                     ▼                              suspend to RAM
         branch `output` ─► GitHub Pages ───────────────►
 ```
 
-Il Kindle resta volutamente stupido: scarica un'immagine e la disegna. Tutta
-la logica sta in CI, dove e' facile testarla e vederla nel browser.
+The Kindle is kept deliberately dumb: it downloads an image and draws it. All
+the logic lives in CI, where it is easy to test and to look at in a browser.
 
-## Cosa mostra
+## What it shows
 
-- **Adesso**: temperatura, condizione, percepita, massima e minima di oggi
-- **Striscia metriche**: umidita, vento con direzione, UV massimo, probabilita
-  di pioggia, qualita dell'aria (indice EAQI europeo)
-- **Prossime 24 ore**: andamento della temperatura con minimo e massimo
-  annotati, barre di probabilita di pioggia
-- **7 giorni**: icona, escursione min–max su una **scala comune** — l'andamento
-  della settimana si legge dalla posizione delle barre, senza leggere i numeri
-- **Piede**: alba, tramonto, fase lunare con percentuale di illuminazione, ora
-  di generazione
+- **Now**: temperature, condition, and — as labelled figures on the right —
+  today's high, today's low and the apparent temperature
+- **Metric strip**: humidity, wind with direction, max UV, rain probability,
+  air quality (European EAQI index)
+- **Next 24 hours**: temperature curve with the coldest and warmest hours
+  annotated, rain-probability bars
+- **7 days**: icon, min–max range on a **shared scale** — the shape of the week
+  reads from the position of the bars, without reading the numbers — plus rain
+  probability and maximum wind speed
+- **Footer**: sunrise, sunset, moon phase with illumination percentage, and the
+  time the image was generated
 
-## Sviluppo
+## Development
 
 ```sh
-make setup      # virtualenv + dipendenze + Chromium
-make preview    # genera out/dashboard.png dalla fixture, senza rete
-make generate   # come sopra ma con i dati veri
-make icons      # provino di tutte le icone alle dimensioni reali
+make setup      # virtualenv + dependencies + Chromium
+make preview    # render out/dashboard.png from the fixture, no network
+make generate   # the same, with live data
+make icons      # contact sheet of every icon at its real sizes
 make test
 ```
 
-`make preview` scrive anche `out/dashboard.html`: e' un file autoconsistente
-(font in base64, icone SVG inline) che si apre direttamente nel browser. E' il
-modo veloce per iterare sul design — si modifica il CSS e si ricarica, senza
-passare dal rendering.
+`make preview` also writes `out/dashboard.html`: a self-contained file (fonts
+in base64, SVG icons inline) that opens straight in a browser. That is the fast
+way to iterate on the design — edit the CSS, reload, no rendering step.
 
-Le fixture in `tests/fixtures/` sono risposte reali di Open-Meteo, cosi'
-l'anteprima e i test sono riproducibili e non dipendono dalla rete.
+The fixtures in `tests/fixtures/` are real Open-Meteo responses, so previews
+and tests are reproducible and never touch the network.
 
-### Struttura
+### Layout
 
-| Percorso | Ruolo |
+| Path | Role |
 |---|---|
-| `src/k4weather/fetch.py` | client Open-Meteo (previsioni + qualita dell'aria) |
-| `src/k4weather/model.py` | normalizzazione dati e geometria dei grafici |
-| `src/k4weather/wmo.py` | codici meteo WMO → descrizione italiana + icona |
-| `src/k4weather/astro.py` | fase lunare, rosa dei venti |
-| `src/k4weather/render.py` | template Jinja → HTML → screenshot Chromium |
-| `src/k4weather/postprocess.py` | conversione e validazione per `eips` |
-| `src/k4weather/templates/` | HTML, CSS, icone SVG, font Inter |
-| `kindle/` | configurazione per il client sul dispositivo |
+| `src/k4weather/fetch.py` | Open-Meteo client (forecast + air quality), with retries |
+| `src/k4weather/model.py` | data normalisation and chart geometry |
+| `src/k4weather/wmo.py` | WMO weather codes → Italian description + icon |
+| `src/k4weather/astro.py` | moon phase, compass rose |
+| `src/k4weather/render.py` | Jinja template → HTML → Chromium screenshot |
+| `src/k4weather/postprocess.py` | conversion and validation for `eips` |
+| `src/k4weather/templates/` | HTML, CSS, SVG icons, Inter fonts |
+| `kindle/` | configuration for the client on the device |
 
-## Vincoli del Kindle 4 che spiegano le scelte
+The API payloads are treated as untrusted: every series is read through a
+bounds-checked helper, so a missing or truncated array degrades to a dash on
+screen instead of costing a whole refresh cycle.
 
-| Vincolo | Conseguenza nel progetto |
+One coupling worth knowing about: the width of the min–max track in
+`style.css` (`.day` grid) must match `DAY_BAR_WIDTH` in `model.py`, because the
+bar inside the track is positioned in absolute pixels computed there.
+
+## Kindle 4 constraints that explain the choices
+
+| Constraint | Consequence in the project |
 |---|---|
-| Pannello 600×800, 16 livelli di grigio | Palette limitata a multipli di 17, cosi' le campiture non perdono nulla in quantizzazione |
-| `eips` deforma i PNG RGB | `postprocess.py` forza grayscale 8 bit senza alpha, e `make inspect` lo verifica |
-| Tratti sottili e grigi chiari spariscono a 167 ppi | Icone a forme piene, filetti mai sotto 1 px, testo nero pieno |
-| curl/wget di serie non parlano TLS moderno | Il download usa `xh`, il client statico incluso in kindle-dash |
-| Il cron di GitHub Actions ritarda di 5-20 minuti | Il Kindle si sveglia sfasato di 15 minuti e l'immagine porta sempre l'ora di generazione |
+| 600×800 panel, 16 gray levels | Palette limited to multiples of 17, so flat areas lose nothing in quantisation |
+| `eips` skews RGB PNGs | `postprocess.py` forces 8-bit grayscale with no alpha, and `make inspect` verifies it |
+| Thin strokes and light grays vanish at 167 ppi | Solid-shape icons, hairlines never below 1 px, text in full black |
+| Stock curl/wget do not speak modern TLS | The download uses `xh`, the static client bundled with kindle-dash |
+| The GitHub Actions cron runs 5-20 minutes late | The Kindle wakes 15 minutes offset and the image always carries its generation time |
 
-### Icone
+### Icons
 
-Set monocromatico disegnato per questo schermo, in `templates/icons/`.
-Geometria condivisa su viewBox 64×64:
+A monochrome set drawn for this screen, in `templates/icons/`. Shared geometry
+on a 64×64 viewBox:
 
 ```
-nuvola canonica   circle(25,28,13) circle(41,31.5,10) rect(11,33,42,11,r5.5)   y 15..44
-nuvola alta       la stessa traslata di -7 (icone con precipitazioni)          y  8..37
-nuvola media      circle(24,36,11) circle(37,39,8.5) rect(12,40,35,10,r5)      y 25..50
-nuvola piccola    circle(38,43,8)  circle(48,45.5,6) rect(30,46,26,8,r4)       y 35..54
+canonical cloud   circle(25,28,13) circle(41,31.5,10) rect(11,33,42,11,r5.5)   y 15..44
+high cloud        the same, translated by -7 (icons with precipitation)        y  8..37
+mid cloud         circle(24,36,11) circle(37,39,8.5) rect(12,40,35,10,r5)      y 25..50
+small cloud       circle(38,43,8)  circle(48,45.5,6) rect(30,46,26,8,r4)       y 35..54
 ```
 
-Le sovrapposizioni (sole dietro la nuvola) sono separate da un contorno bianco
-invece che da una `<mask>`: il fondo e' sempre carta bianca e cosi' si evitano
-`id` duplicati quando la stessa icona compare piu volte nella pagina.
+Overlaps (sun behind a cloud) are separated by a white outline rather than a
+`<mask>`: the background is always white paper, and this way there are no
+duplicate `id`s when the same icon appears several times on the page.
 
-Dopo ogni modifica, `make icons` disegna tutto il set a 112, 26 e 15 px — le
-tre dimensioni in cui appare davvero. A 26 px molte idee che funzionano grandi
-diventano illeggibili, conviene verificarlo subito.
+After every change, `make icons` draws the whole set at 112, 26 and 15 px — the
+three sizes it actually appears at. At 26 px many ideas that work large become
+illegible, and it is worth finding out immediately.
 
-## Messa in servizio
+## Putting it into service
 
-Procedura passo passo in [`docs/setup.md`](docs/setup.md). In sintesi:
+Step-by-step procedure in [`docs/setup.md`](docs/setup.md). In short:
 
-1. **Repository pubblico** — il Kindle non sa autenticarsi, quindi la sorgente
-   dev'essere leggibile senza token. In piu, 48 run al giorno costano circa
-   3.000 minuti di Actions al mese contro i 2.000 inclusi nel piano gratuito
-   per i repository privati; sui pubblici Actions e' illimitato.
-2. **Push su `main`** — il workflow parte da solo e crea il branch `output`.
-3. **Secret `PUBLISH_TOKEN`** (consigliato) — un PAT fine-grained con
-   `contents: write`, per evitare che GitHub disattivi lo scheduler dopo 60
-   giorni di inattivita: i commit del token automatico non contano come tale.
-4. **Kindle** — vedi [`kindle/README.md`](kindle/README.md).
+1. **Public repository** — the Kindle cannot authenticate, so the source has to
+   be readable without a token. On top of that, 48 runs a day cost about 3,000
+   Actions minutes a month against the 2,000 included in the free plan for
+   private repositories; on public ones Actions is unlimited.
+2. **Push to `main`** — the workflow starts by itself and creates the `output`
+   branch.
+3. **`PUBLISH_TOKEN` secret** (recommended) — a fine-grained PAT with
+   `contents: write`, to stop GitHub disabling the scheduler after 60 days of
+   inactivity: commits made with the automatic token do not count as activity.
+4. **Kindle** — see [`kindle/README.md`](kindle/README.md).
 
-Il Kindle legge da
-`raw.githubusercontent.com/dev-whiterice/k4-weather/output/dashboard.png`, la
-stessa sorgente usata dall'esempio di kindle-dash: percorso gia' collaudato sul
-dispositivo.
+The Kindle reads from
+`raw.githubusercontent.com/dev-whiterice/k4-weather/output/dashboard.png`, the
+same source used by the kindle-dash example: a path already proven on the
+device.
 
-Il workflow supporta anche la pubblicazione su un repository diverso, tramite
-la variabile `PUBLISH_REPO`, se un domani il codice dovesse tornare privato.
+The workflow also supports publishing to a different repository through the
+`PUBLISH_REPO` variable, in case the code ever goes private again.
 
 ## Roadmap
 
-- [x] Fase 1 — localita fissa in `config.yaml`
-- [ ] Fase 2 — localita dinamica (piu localita, ricerca per nome via geocoding
-      Open-Meteo, selezione da secret)
-- [ ] Batteria del Kindle sovrimpressa a schermo tramite `eips` lato client
-- [ ] Immagine di fallback con banner esplicito quando l'API non risponde
+- [x] Phase 1 — fixed location in `config.yaml`
+- [ ] Phase 2 — dynamic location (several locations, search by name through
+      Open-Meteo geocoding, selection from a secret)
+- [ ] Kindle battery level overlaid on screen with `eips`, client side
+- [ ] Fallback image with an explicit banner when the API does not answer
 
-## Licenza
+## Licence
 
-MIT. I dati meteo sono di [Open-Meteo](https://open-meteo.com) (CC BY 4.0);
-il font [Inter](https://rsms.me/inter/) e' distribuito con licenza SIL Open
-Font License 1.1.
+MIT. Weather data is from [Open-Meteo](https://open-meteo.com) (CC BY 4.0);
+the [Inter](https://rsms.me/inter/) font is distributed under the SIL Open Font
+License 1.1.

@@ -1,8 +1,8 @@
-"""Calcoli astronomici leggeri: fase lunare e rosa dei venti.
+"""Lightweight astronomy: moon phase and compass rose.
 
-Open-Meteo non espone la fase lunare, quindi la ricaviamo dal ciclo sinodico.
-L'approssimazione ha un errore di poche ore, piu che sufficiente per mostrare
-il nome della fase e un disco illuminato correttamente.
+Open-Meteo does not expose the moon phase, so we derive it from the synodic
+cycle. The approximation is off by a few hours, which is plenty to show the
+name of the phase and a correctly lit disc.
 """
 
 from __future__ import annotations
@@ -11,10 +11,12 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+# Mean length of a lunation, in days.
 SYNODIC_MONTH = 29.530588853
-# Novilunio di riferimento: 6 gennaio 2000, 18:14 UTC
+# Reference new moon: 6 January 2000, 18:14 UTC
 _REFERENCE_NEW_MOON = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
 
+# Italian phase names, in cycle order starting from the new moon.
 _PHASE_NAMES = [
     "Luna nuova",
     "Luna crescente",
@@ -26,6 +28,7 @@ _PHASE_NAMES = [
     "Luna calante",
 ]
 
+# Sixteenths of the compass in Italian notation: O (ovest) where English uses W.
 _COMPASS = [
     "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
     "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO",
@@ -34,19 +37,20 @@ _COMPASS = [
 
 @dataclass(frozen=True)
 class MoonPhase:
-    fraction: float      # posizione nel ciclo, 0 = novilunio, 0.5 = plenilunio
-    illumination: float  # frazione di disco illuminato, 0..1
+    fraction: float      # position in the cycle, 0 = new moon, 0.5 = full moon
+    illumination: float  # lit fraction of the disc, 0..1
     name: str
-    waxing: bool         # True se crescente
+    waxing: bool         # True while the lit side is growing
 
 
 def moon_phase(moment: datetime) -> MoonPhase:
+    """Moon phase at `moment`; naive datetimes are read as UTC."""
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     days = (moment - _REFERENCE_NEW_MOON).total_seconds() / 86400.0
     fraction = (days % SYNODIC_MONTH) / SYNODIC_MONTH
     illumination = (1 - math.cos(2 * math.pi * fraction)) / 2
-    # Otto settori centrati sulle fasi principali
+    # Eight sectors centred on the principal phases, hence the +0.5 rounding.
     index = int((fraction * 8) + 0.5) % 8
     return MoonPhase(
         fraction=fraction,
@@ -57,20 +61,20 @@ def moon_phase(moment: datetime) -> MoonPhase:
 
 
 def moon_svg(phase: MoonPhase, size: int = 22) -> str:
-    """Disco lunare come SVG: parte illuminata piena, resto a contorno.
+    """The moon as an SVG disc: lit part filled, the rest left as an outline.
 
-    Il terminatore e' un'ellisse la cui semiampiezza orizzontale varia con
-    cos(2*pi*fraction); il segno decide se la fase e' crescente o calante.
+    The terminator is an ellipse whose horizontal semi-axis follows
+    cos(2*pi*fraction); the sign of that cosine decides which way it bulges.
     """
     r = size / 2
     cx = cy = r
-    inner = r - 1  # lascia spazio al contorno
+    inner = r - 1  # leaves room for the outline stroke
     k = math.cos(2 * math.pi * phase.fraction)
     rx = abs(k) * inner
 
-    # Semidisco sempre illuminato: destro se crescente, sinistro se calante.
+    # The always-lit half: right while waxing, left while waning.
     lit_sweep = 1 if phase.waxing else 0
-    # Il terminatore curva verso l'esterno quando la fase supera il quarto.
+    # The terminator bulges outwards once the phase is past the quarter.
     term_sweep = 1 if (k < 0) == phase.waxing else 0
 
     lit = (
@@ -88,7 +92,7 @@ def moon_svg(phase: MoonPhase, size: int = 22) -> str:
 
 
 def compass_point(degrees: float | None) -> str:
-    """Direzione del vento in sedicesimi, notazione italiana (O = ovest)."""
+    """Wind direction in sixteenths, Italian notation; empty string if unknown."""
     if degrees is None:
         return ""
     return _COMPASS[int((degrees % 360) / 22.5 + 0.5) % 16]

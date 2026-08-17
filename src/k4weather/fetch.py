@@ -1,12 +1,16 @@
-"""Client Open-Meteo.
+"""Open-Meteo client.
 
-Due endpoint distinti: previsioni e qualita dell'aria. La qualita dell'aria e'
-un extra: se fallisce, il resto della dashboard viene generato comunque.
+Two separate endpoints: forecast and air quality. Air quality is a bonus — if
+it fails the rest of the dashboard is still generated.
+
+Both calls are retried: the workflow runs unattended every 30 minutes and a
+single dropped connection would otherwise cost a whole refresh cycle.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import requests
@@ -19,6 +23,11 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 TIMEOUT = 20
+ATTEMPTS = 3
+# Linear backoff between attempts; the API is rate-limited per minute, so
+# retrying immediately would only burn the remaining budget.
+RETRY_DELAY = 3
+
 
 CURRENT_VARS = [
     "temperature_2m",
@@ -50,7 +59,35 @@ DAILY_VARS = [
 ]
 
 
+def _get_json(
+    url: str,
+    params: dict[str, Any],
+    session: requests.Session | None,
+    sleep: float = RETRY_DELAY,
+) -> dict[str, Any]:
+    """GET returning parsed JSON, retried on transport and 5xx errors.
+
+    The last exception is re-raised, so the caller decides whether the failure
+    is fatal (forecast) or merely degrades the output (air quality).
+    """
+    http = session or requests
+    last: Exception | None = None
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            response = http.get(url, params=params, timeout=TIMEOUT)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            last = exc
+            if attempt < ATTEMPTS:
+                log.warning("%s: attempt %d/%d failed (%s)", url, attempt, ATTEMPTS, exc)
+                time.sleep(sleep)
+    assert last is not None  # the loop only exits here after an exception
+    raise last
+
+
 def fetch_forecast(cfg: Config, session: requests.Session | None = None) -> dict[str, Any]:
+    """Forecast payload: current observation, hourly series and daily series."""
     params = {
         "latitude": cfg.location.latitude,
         "longitude": cfg.location.longitude,
@@ -63,16 +100,13 @@ def fetch_forecast(cfg: Config, session: requests.Session | None = None) -> dict
         "wind_speed_unit": cfg.units.wind_speed,
         "precipitation_unit": cfg.units.precipitation,
     }
-    http = session or requests
-    response = http.get(FORECAST_URL, params=params, timeout=TIMEOUT)
-    response.raise_for_status()
-    return response.json()
+    return _get_json(FORECAST_URL, params, session)
 
 
 def fetch_air_quality(
     cfg: Config, session: requests.Session | None = None
 ) -> dict[str, Any] | None:
-    """Qualita dell'aria; None se disabilitata o non raggiungibile."""
+    """Air quality; None when disabled or unreachable."""
     if not cfg.features.air_quality:
         return None
     params = {
@@ -82,10 +116,7 @@ def fetch_air_quality(
         "timezone": cfg.location.timezone,
     }
     try:
-        http = session or requests
-        response = http.get(AIR_QUALITY_URL, params=params, timeout=TIMEOUT)
-        response.raise_for_status()
-        return response.json()
+        return _get_json(AIR_QUALITY_URL, params, session)
     except requests.RequestException as exc:
-        log.warning("qualita dell'aria non disponibile: %s", exc)
+        log.warning("air quality unavailable: %s", exc)
         return None

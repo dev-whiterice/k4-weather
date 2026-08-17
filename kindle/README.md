@@ -1,169 +1,179 @@
-# Il client sul Kindle 4
+# The client on the Kindle 4
 
-Il Kindle non calcola nulla: si sveglia, scarica un PNG, lo disegna e torna a
-dormire. Tutta la parte fragile — attesa del Wi-Fi, TLS moderno, sospensione in
-RAM, sveglia programmata dall'orologio hardware — e' gia' risolta da
-[pascalw/kindle-dash](https://github.com/pascalw/kindle-dash), usato qui come
-runtime. Questa cartella contiene solo i due file di configurazione da
-sostituire.
+The Kindle computes nothing: it wakes up, downloads a PNG, draws it and goes
+back to sleep. All the fragile parts — waiting for Wi-Fi, modern TLS, suspend
+to RAM, wake-up scheduled by the hardware clock — are already solved by
+[pascalw/kindle-dash](https://github.com/pascalw/kindle-dash), used here as the
+runtime. This directory holds only the two configuration files that replace its
+own.
 
-## Cosa fa `kindle-dash`, in concreto
+## What `kindle-dash` actually does
 
-All'avvio `dash.sh` **spegne l'interfaccia del Kindle**:
+On start-up `dash.sh` **shuts down the Kindle interface**:
 
 ```sh
-/etc/init.d/framework stop          # via il lettore di ebook
+/etc/init.d/framework stop          # goodbye ebook reader
 initctl stop webreader
 echo powersave > .../scaling_governor
 lipc-set-prop com.lab126.powerd preventScreenSaver 1
 ```
 
-Da quel momento il dispositivo non e' piu un lettore: e' un pannello. Per
-tornare indietro serve `stop.sh` **seguito da** `/etc/init.d/framework start`,
-oppure un riavvio.
+From that moment the device is no longer a reader: it is a panel. Getting back
+takes `stop.sh` **followed by** `/etc/init.d/framework start`, or a reboot.
 
-Poi entra nel ciclo principale, che a ogni giro:
+Then it enters the main loop, which on every pass:
 
-1. registra il livello di batteria nel log;
-2. chiede al binario `next-wakeup` quanti secondi mancano al prossimo slot del
-   `REFRESH_SCHEDULE`;
-3. se mancano piu di `SLEEP_SCREEN_INTERVAL` secondi mostra `sleeping.png`,
-   altrimenti aggiorna la dashboard: attende il Wi-Fi, chiama
-   `local/fetch-dashboard.sh`, e disegna con `eips`;
-4. **aspetta 10 secondi** — l'unica finestra utile per interromperlo;
-5. scrive la durata sull'RTC e sospende in RAM con `echo mem > /sys/power/state`.
+1. records the battery level in the log;
+2. asks the `next-wakeup` binary how many seconds remain until the next
+   `REFRESH_SCHEDULE` slot;
+3. if that is more than `SLEEP_SCREEN_INTERVAL` seconds away it shows
+   `sleeping.png`, otherwise it refreshes the dashboard: waits for Wi-Fi, calls
+   `local/fetch-dashboard.sh`, and draws with `eips`;
+4. **waits 10 seconds** — the only useful window to interrupt it;
+5. writes the duration to the RTC and suspends to RAM with
+   `echo mem > /sys/power/state`.
 
-Due comportamenti che contano per come e' scritta la nostra configurazione:
+Two behaviours that explain how our configuration is written:
 
-- **Se il fetch esce con codice diverso da zero, lo schermo non viene toccato.**
-  Per questo `fetch-dashboard.sh` ritenta e poi fallisce invece di scrivere un
-  file vuoto: meglio una dashboard vecchia che un pannello bianco.
-- **Un refresh completo ogni `FULL_DISPLAY_REFRESH_RATE` aggiornamenti
-  parziali.** I parziali non fanno lampeggiare lo schermo ma accumulano
-  ghosting; il completo lo azzera.
+- **If the fetch exits non-zero, the screen is not touched at all.** That is
+  why `fetch-dashboard.sh` retries and then fails instead of writing an empty
+  file: an old dashboard beats a blank panel.
+- **One full refresh every `FULL_DISPLAY_REFRESH_RATE` partial updates.**
+  Partial updates do not flash the screen but accumulate ghosting; the full one
+  clears it.
 
-## Installazione
+## Installation
 
-Servono jailbreak, USBNetwork e Wi-Fi gia' configurati.
+Jailbreak, USBNetwork and Wi-Fi have to be configured already.
+
+The scripted way, from the Mac, is [`install.sh`](install.sh): it downloads the
+runtime, applies our configuration, checks the image URL, copies everything to
+the device and deliberately starts nothing.
 
 ```sh
-# 1. Scarica il runtime. L'archivio e' un .tgz che si espande piatto.
+./kindle/install.sh                      # uses root@192.168.15.244
+./kindle/install.sh root@192.168.1.50    # Kindle reachable over Wi-Fi
+```
+
+By hand it is four steps:
+
+```sh
+# 1. Download the runtime. The archive is a .tgz that expands flat.
 mkdir -p kindle-dash
 curl -sSL "$(curl -sSL https://api.github.com/repos/pascalw/kindle-dash/releases/latest \
-  | grep browser_download_url | cut -d'"' -f4)" | tar xz -C kindle-dash
+  | grep browser_download_url | cut -d'"' -f4 | head -n1)" | tar xz -C kindle-dash
 
-# 2. Sovrascrivi la configurazione di esempio con la nostra
+# 2. Replace the example configuration with ours
 cp kindle/local/env.sh             kindle-dash/local/env.sh
 cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
 
-# 3. Copia sul Kindle (USBNetwork attivo, cavo collegato)
+# 3. Copy to the Kindle (USBNetwork on, cable connected)
 rsync -vr kindle-dash/ root@192.168.15.244:/mnt/us/dashboard
 
-# 4. Ripristina i permessi di esecuzione, che il transito puo' perdere
+# 4. Restore the executable bits, which the transfer can lose
 ssh root@192.168.15.244 'chmod +x /mnt/us/dashboard/*.sh \
   /mnt/us/dashboard/local/*.sh /mnt/us/dashboard/xh /mnt/us/dashboard/next-wakeup'
 ```
 
-In alternativa al punto 3, il Kindle collegato come normale chiavetta USB
-espone `/mnt/us` come disco: puoi copiare la cartella `dashboard` col Finder e
-usare SSH solo per i comandi.
+As an alternative to step 3, a Kindle plugged in as a normal USB drive exposes
+`/mnt/us` as a disk: you can copy the `dashboard` folder in Finder and use SSH
+only for the commands.
 
-`DASH_URL` in `fetch-dashboard.sh` punta gia' al branch `output` del
-repository. Va cambiato solo se rinomini il repository.
+`DASH_URL` in `fetch-dashboard.sh` already points at the `output` branch of the
+repository. It only needs changing if you rename the repository.
 
-### Se l'SSH va in timeout con USBNetwork attivo
+### If SSH times out with USBNetwork on
 
-USBNetwork **non fa da server DHCP**. macOS collega l'interfaccia (compare come
-`RNDIS/Ethernet Gadget`), chiede un indirizzo, non riceve risposta e dopo il
-timeout ripiega su un link-local `169.254.x.x`. A quel punto non esiste alcuna
-rotta verso `192.168.15.0/24`, quindi i pacchetti per il Kindle escono dal
-Wi-Fi verso internet e muoiono lì:
+USBNetwork **is not a DHCP server**. macOS brings the interface up (it appears
+as `RNDIS/Ethernet Gadget`), asks for an address, gets no answer and after the
+timeout falls back to a link-local `169.254.x.x`. At that point there is no
+route towards `192.168.15.0/24`, so packets for the Kindle leave through the
+Wi-Fi towards the internet and die there:
 
 ```sh
-ifconfig en8 | grep inet          # inet 169.254.243.126  ← sintomo
-route -n get 192.168.15.244       # interface: en0        ← esce dal Wi-Fi
+ifconfig en8 | grep inet          # inet 169.254.243.126  ← the symptom
+route -n get 192.168.15.244       # interface: en0        ← leaving via Wi-Fi
 ```
 
-L'indirizzo host della subnet va messo a mano:
+The host address on the subnet has to be set by hand:
 
 ```sh
 sudo ifconfig en8 192.168.15.201 netmask 255.255.255.0
 ```
 
-Il nome dell'interfaccia si ricava con:
+The interface name comes from:
 
 ```sh
 networksetup -listallhardwareports | grep -A1 "Ethernet Gadget"
 ```
 
-Va rifatto a ogni riconnessione del cavo — `install.sh` se ne accorge da solo e
-stampa il comando giusto. **Non assegnare un gateway** su questa interfaccia:
-si trova sopra il Wi-Fi nell'ordine dei servizi di rete e diventerebbe la rotta
-di default, lasciandoti senza internet.
+It has to be redone every time the cable is reconnected — `install.sh` notices
+on its own and prints the right command. **Do not set a gateway** on this
+interface: it sits above the Wi-Fi in the network service order and would
+become the default route, leaving you without internet.
 
-## Prova in modalita' debug
+## Try it in debug mode
 
-Non lanciare `start.sh` come prima cosa: con `DEBUG=true` il ciclo resta in
-primo piano, stampa ogni comando e **usa `sleep` invece di sospendere**, quindi
-il dispositivo resta raggiungibile via SSH e puoi fermarlo con Ctrl-C.
+Do not run `start.sh` as your first move: with `DEBUG=true` the loop stays in
+the foreground, prints every command and **uses `sleep` instead of
+suspending**, so the device stays reachable over SSH and you can stop it with
+Ctrl-C.
 
 ```sh
 ssh root@192.168.15.244
 cd /mnt/us/dashboard
 
-# Prima il solo download, senza toccare lo schermo
+# The download alone first, without touching the screen
 ./local/fetch-dashboard.sh /tmp/test.png && echo OK && ls -l /tmp/test.png
-./xh --version                    # deve girare: e' un binario ARM statico
+./xh --version                    # must run: it is a static ARM binary
 
-# Poi il disegno
+# Then the drawing
 eips -f -g /tmp/test.png
 
-# Infine il ciclo completo, in primo piano
+# Finally the whole loop, in the foreground
 DEBUG=true ./start.sh
 ```
 
-Se l'immagine appare **deformata o schiacciata**, il PNG non e' in scala di
-grigi: `eips` accetta solo grayscale a 8 bit senza canale alpha. Dal lato
-generatore il controllo e' automatico (`make inspect`).
+If the image comes out **skewed or squashed**, the PNG is not grayscale: `eips`
+only accepts 8-bit gray with no alpha channel. On the generator side that check
+is automatic (`make inspect`).
 
-## Avvio vero
+## The real start
 
 ```sh
 ssh root@192.168.15.244 /mnt/us/dashboard/start.sh
 ```
 
-Parte in background, scrive su `/mnt/us/dashboard/logs/dash.log`, e dopo una
-decina di secondi il dispositivo si sospende. Da li' in poi si sveglia da solo
-ai minuti :15 e :45.
+It starts in the background, logs to `/mnt/us/dashboard/logs/dash.log`, and
+after ten seconds or so the device suspends. From then on it wakes by itself at
+:15 and :45.
 
-Per avviarlo dal menu invece che da SSH, copia `KUAL/kindle-dash` dal
-[repository di kindle-dash](https://github.com/pascalw/kindle-dash/tree/master/KUAL)
-in `/mnt/us/extensions` — non e' incluso nella release.
+To start it from the menu instead of over SSH, copy `KUAL/kindle-dash` from the
+[kindle-dash repository](https://github.com/pascalw/kindle-dash/tree/master/KUAL)
+into `/mnt/us/extensions` — it is not part of the release.
 
-## Fermarlo e riprendersi il Kindle
+## Stopping it and taking the Kindle back
 
 ```sh
 ssh root@192.168.15.244
-/mnt/us/dashboard/stop.sh        # ferma il ciclo
-/etc/init.d/framework start      # riaccende il lettore di ebook
+/mnt/us/dashboard/stop.sh        # stops the loop
+/etc/init.d/framework start      # turns the ebook reader back on
 ```
 
-`stop.sh` da solo lascia lo schermo congelato e il framework spento: senza il
-secondo comando sembra che il Kindle sia morto. In caso di dubbio, un riavvio
-(power button tenuto premuto ~20 secondi) rimette tutto a posto.
+`stop.sh` on its own leaves the screen frozen and the framework down: without
+the second command it looks like the Kindle has died. When in doubt, a reboot
+(power button held for ~20 seconds) puts everything back.
 
-Il momento buono per intercettarlo e' la finestra di 10 secondi prima della
-sospensione. Se lo manchi, il dispositivo torna raggiungibile solo al risveglio
-successivo — al massimo 30 minuti dopo.
+The moment to catch it is the 10-second window before suspend. Miss it and the
+device only becomes reachable again at the next wake-up — at most 30 minutes
+later.
 
-## Consumi
+## Power draw
 
-Con aggiornamento ogni 30 minuti e sospensione in RAM tra un refresh e l'altro,
-l'autonomia attesa e' nell'ordine delle settimane. Per allungarla, limita
-`REFRESH_SCHEDULE` alle ore in cui guardi davvero lo schermo, per esempio
-`"15,45 7-23 * * *"`.
+With a refresh every 30 minutes and suspend to RAM in between, expected battery
+life is in the order of weeks. To stretch it, restrict `REFRESH_SCHEDULE` to
+the hours you actually look at the screen, for example `"15,45 7-23 * * *"`.
 
-Attenzione: alzare l'intervallo oltre `SLEEP_SCREEN_INTERVAL` (3600 s) fa
-comparire la schermata "kindle is sleeping" al posto della dashboard. Se metti
-una pausa notturna e vuoi che resti visibile il meteo, alza anche quella
-soglia.
+Careful: raising the interval beyond `SLEEP_SCREEN_INTERVAL` (3600 s) makes the
+"kindle is sleeping" screen appear instead of the dashboard. If you add a night
+pause and want the weather to stay visible, raise that threshold too.

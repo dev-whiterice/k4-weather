@@ -2,10 +2,10 @@ name: dashboard
 
 on:
   schedule:
-    # Ogni 30 minuti. Il cron di GitHub Actions non e' puntuale: nelle ore di
-    # punta il ritardo arriva a 15-20 minuti e qualche esecuzione salta. Il
-    # Kindle si sveglia con uno sfasamento (vedi kindle/local/env.sh) e
-    # l'immagine porta sempre l'ora di generazione.
+    # Every 30 minutes. The GitHub Actions cron is not punctual: at peak hours
+    # the delay reaches 15-20 minutes and the odd run is skipped. The Kindle
+    # wakes up offset by 15 minutes (see kindle/local/env.sh) and the image
+    # always carries its generation time.
     - cron: "0,30 * * * *"
   workflow_dispatch:
   push:
@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write
 
+# Never two renders at once: they would race to force-push the output branch.
 concurrency:
   group: dashboard
   cancel-in-progress: false
@@ -36,21 +37,23 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Cache di Chromium
+      - name: Cache Chromium
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
+          # Keyed on requirements.txt because that is where the playwright
+          # version is pinned: a bump has to pull a matching browser.
           key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
 
       - run: playwright install --with-deps chromium
 
-      - name: Genera la dashboard
+      - name: Render the dashboard
         run: PYTHONPATH=src python -m k4weather generate --out out/dashboard.png
 
-      - name: Verifica che il PNG sia digeribile da eips
+      - name: Check that the PNG is digestible by eips
         run: PYTHONPATH=src python -m k4weather inspect out/dashboard.png
 
-      - name: Prepara la cartella da pubblicare
+      - name: Prepare the directory to publish
         run: |
           mkdir -p publish
           cp out/dashboard.png publish/dashboard.png
@@ -69,29 +72,29 @@ jobs:
             p{margin:16px}
           </style>
           <div>
-            <img src="dashboard.png" alt="dashboard meteo">
-            <p>aggiornata ogni 30 minuti · <a href="meta.json" style="color:#888">meta.json</a></p>
+            <img src="dashboard.png" alt="weather dashboard">
+            <p>updated every 30 minutes · <a href="meta.json" style="color:#888">meta.json</a></p>
           </div>
           HTML
 
-      - name: Pubblica l'immagine
+      - name: Publish the image
         env:
-          # Di norma l'immagine va sul branch `output` di questo stesso
-          # repository, che e' pubblico perche' il Kindle non sa autenticarsi.
-          # Impostando la variabile PUBLISH_REPO si puo' dirottarla altrove,
-          # utile se un domani il codice tornasse privato.
+          # By default the image goes to the `output` branch of this same
+          # repository, which is public because the Kindle cannot authenticate.
+          # Setting the PUBLISH_REPO variable diverts it elsewhere, useful if
+          # the code ever goes private again.
           PUBLISH_REPO: ${{ vars.PUBLISH_REPO || github.repository }}
           PUBLISH_BRANCH: ${{ vars.PUBLISH_BRANCH || 'output' }}
-          # PAT fine-grained con contents:write sul repo di destinazione.
-          # Serve anche a tenere vivo lo scheduler: GitHub disattiva i workflow
-          # schedulati dopo 60 giorni e i commit del token automatico non
-          # contano come attivita'.
+          # Fine-grained PAT with contents:write on the destination repo.
+          # It also keeps the scheduler alive: GitHub disables scheduled
+          # workflows after 60 days and commits made with the automatic token
+          # do not count as activity.
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           FALLBACK_TOKEN: ${{ github.token }}
         run: |
           set -eu
           if [ "$PUBLISH_REPO" != "$GITHUB_REPOSITORY" ] && [ -z "$PUBLISH_TOKEN" ]; then
-            echo "::error::PUBLISH_REPO punta a ${PUBLISH_REPO} ma manca il secret PUBLISH_TOKEN"
+            echo "::error::PUBLISH_REPO points at ${PUBLISH_REPO} but the PUBLISH_TOKEN secret is missing"
             exit 1
           fi
           cd publish
@@ -102,34 +105,36 @@ jobs:
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "dashboard $(date -u +%Y-%m-%dT%H:%MZ)"
 
-          # Force push di un singolo commit senza storia: il branch resta di
-          # dimensione costante invece di accumulare 48 PNG al giorno.
+          # Force push of a single history-less commit: the branch stays a
+          # constant size instead of piling up 48 PNGs a day.
           push_with() {
             git push -qf "https://x-access-token:$1@github.com/${PUBLISH_REPO}.git" \
               "$PUBLISH_BRANCH"
           }
 
           if [ -n "$PUBLISH_TOKEN" ] && push_with "$PUBLISH_TOKEN"; then
-            echo "pubblicata su ${PUBLISH_REPO}@${PUBLISH_BRANCH} con PUBLISH_TOKEN" \
+            echo "published to ${PUBLISH_REPO}@${PUBLISH_BRANCH} with PUBLISH_TOKEN" \
               >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          # Un PUBLISH_TOKEN scaduto o con i permessi sbagliati non deve
-          # congelare la dashboard: sullo stesso repository il token automatico
-          # sa scrivere lo stesso, e il guasto resta segnalato come warning.
+          # An expired PUBLISH_TOKEN, or one with the wrong permissions, must
+          # not freeze the dashboard: on this same repository the automatic
+          # token can write anyway, and the fault stays visible as a warning.
           if [ -n "$PUBLISH_TOKEN" ]; then
             if [ "$PUBLISH_REPO" != "$GITHUB_REPOSITORY" ]; then
-              echo "::error::PUBLISH_TOKEN rifiutato da ${PUBLISH_REPO} e non c'e' ripiego possibile su un altro repository"
+              echo "::error::PUBLISH_TOKEN rejected by ${PUBLISH_REPO} and there is no possible fallback on another repository"
               exit 1
             fi
-            echo "::warning::PUBLISH_TOKEN rifiutato da ${PUBLISH_REPO}: controlla scadenza, repository access e permesso contents:write. Pubblico col token automatico, ma lo scheduler tornera' a spegnersi dopo 60 giorni di inattivita'."
+            echo "::warning::PUBLISH_TOKEN rejected by ${PUBLISH_REPO}: check expiry, repository access and the contents:write permission. Publishing with the automatic token, but the scheduler will go back to switching itself off after 60 days of inactivity."
           fi
 
           push_with "$FALLBACK_TOKEN"
-          echo "pubblicata su ${PUBLISH_REPO}@${PUBLISH_BRANCH} col token automatico" \
+          echo "published to ${PUBLISH_REPO}@${PUBLISH_BRANCH} with the automatic token" \
             >> "$GITHUB_STEP_SUMMARY"
 
+      # Kept even on failure: the HTML is what tells a broken layout apart from
+      # a broken conversion.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,8 +1,14 @@
+{#
+  Dashboard layout. Everything here is declarative: values arrive already
+  rounded and formatted from model.py, and coordinates are already in the SVG
+  units of the final PNG. On-screen copy is Italian on purpose.
+#}
 <!DOCTYPE html>
 <html lang="it">
 <head>
 <meta charset="utf-8">
 <title>{{ d.location }} — {{ d.date_long }}</title>
+{# Fonts first: they are inlined as data URIs so the page loads offline. #}
 <style>{{ font_face_css }}</style>
 <style>{{ styles }}</style>
 </head>
@@ -13,12 +19,13 @@
   <div class="date">{{ d.date_long }}</div>
 </section>
 
+{# Current conditions: icon, temperature, and the three figures that qualify
+   it — today's high and low, and what the air actually feels like. #}
 <section class="current">
   <div class="now-icon">{{ icon(d.icon) }}</div>
   <div class="now-main">
     <div class="temp">{{ d.temperature }}<span class="deg">°</span></div>
     <div class="condition">{{ d.condition }}</div>
-    <div class="apparent">percepiti {{ d.apparent }}</div>
   </div>
   <div class="now-range">
     <div class="range-row">
@@ -28,6 +35,10 @@
     <div class="range-row">
       <span class="range-key">min</span>
       <span class="range-val">{{ d.today_min }}</span>
+    </div>
+    <div class="range-row">
+      <span class="range-key">percepita</span>
+      <span class="range-val">{{ d.apparent }}</span>
     </div>
   </div>
 </section>
@@ -41,6 +52,8 @@
   {% endfor %}
 </section>
 
+{# Hourly chart: temperature curve on top, rain probability bars underneath,
+   hour labels below both. The extra 18px of height are for those labels. #}
 <section class="hourly">
   <div class="section-head">
     <div class="section-title">{{ d.hourly_title }}</div>
@@ -51,7 +64,9 @@
     <path class="area" d="{{ d.temp_area_path }}"/>
     <path class="line" d="{{ d.temp_path }}"/>
 
+    {# Only the coldest and warmest hours get a marker and a number. #}
     {%- for h in d.hours if h.is_extreme %}
+    {# The halo punches a hole in the curve so the dot stays readable. #}
     <circle class="marker-halo" cx="{{ '%.2f'|format(h.x) }}" cy="{{ '%.2f'|format(h.temp_y) }}" r="5"/>
     <circle class="marker" cx="{{ '%.2f'|format(h.x) }}" cy="{{ '%.2f'|format(h.temp_y) }}" r="3"/>
     <text class="marker-label"
@@ -70,6 +85,7 @@
 
     <g transform="translate(0 {{ d.chart_height }})">
       {%- for h in d.hours if h.show_label %}
+      {# The first label is anchored to the start, or it would be clipped. #}
       <text class="hour" x="{{ '%.2f'|format(h.x) }}" y="14"
             text-anchor="{% if loop.first %}start{% else %}middle{% endif %}">{{ h.label }}</text>
       {%- endfor %}
@@ -77,6 +93,8 @@
   </svg>
 </section>
 
+{# Multi-day grid. The min/max bars share one scale across all rows, so the
+   shape of the week reads from their position alone. #}
 <section class="daily">
   {% for day in d.days %}
   <div class="day">
@@ -88,6 +106,7 @@
     </div>
     <div class="d-max">{{ day.temp_max }}</div>
     <div class="d-precip{% if not day.precip_probability %} none{% endif %}">{{ day.precip_label }}</div>
+    <div class="d-wind">{{ day.wind }}<span class="d-unit">{{ d.wind_unit }}</span></div>
   </div>
   {% endfor %}
 </section>
@@ -103,6 +122,8 @@
     {%- endif %}
   </div>
   <div class="foot-note">
+    {# Shown when the observation is older than STALE_AFTER: the image is
+       fresh, the data behind it is not. #}
     {%- if d.stale %}<span class="stale">dati non aggiornati</span> · {% endif -%}
     Open-Meteo · agg. {{ d.updated_at }}
   </div>

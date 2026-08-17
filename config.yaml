@@ -1,11 +1,11 @@
-# Configurazione k4-weather
-# Fase 1: localita fissa. Per cambiarla basta modificare lat/lon/name qui sotto.
+# k4-weather configuration.
+# Phase 1: a single fixed location. Change lat/lon/name below to move it.
 
 location:
   name: "Caoria"
   latitude: 46.19647
   longitude: 11.67804
-  # timezone: "auto" lascia risolvere il fuso a Open-Meteo dalle coordinate
+  # "auto" lets Open-Meteo resolve the timezone from the coordinates
   timezone: "auto"
 
 units:
@@ -16,13 +16,13 @@ units:
 display:
   width: 600
   height: 800
-  # Numero di giorni mostrati nella griglia previsioni (oltre a oggi)
+  # Days shown in the forecast grid, on top of today (1-15)
   forecast_days: 7
-  # Ore mostrate nel grafico orario
+  # Hours shown in the hourly chart (1-48)
   hourly_hours: 24
-  # Livelli di grigio del pannello e-ink del Kindle 4
+  # Gray levels of the Kindle 4 e-ink panel
   gray_levels: 16
-  # Fattore di supersampling in fase di screenshot (1 = testo piu nitido/hinted)
+  # Supersampling factor at screenshot time (1 = sharper, hinted text)
   scale_factor: 1
 
 features:

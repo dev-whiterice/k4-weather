@@ -1,8 +1,11 @@
-"""Interfaccia a riga di comando.
+"""Command line interface.
 
-    python -m k4weather generate            # dati live -> out/dashboard.png
-    python -m k4weather preview             # dati da fixture, nessuna rete
+    python -m k4weather generate            # live data -> out/dashboard.png
+    python -m k4weather preview             # data from a fixture, no network
     python -m k4weather inspect out/dashboard.png
+
+Every command returns a shell exit code: 0 when the image is fit for `eips`,
+1 when it is not. The workflow relies on that to fail loudly.
 """
 
 from __future__ import annotations
@@ -24,27 +27,33 @@ FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 
 def _write_outputs(forecast, air_quality, cfg, out_png: Path, now=None) -> int:
+    """Model -> HTML -> raw screenshot -> e-ink PNG, then validate the result."""
     dashboard = build_dashboard(forecast, air_quality, cfg, now=now)
     html = render.build_html(dashboard, cfg)
 
     out_html = out_png.with_suffix(".html")
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(html, encoding="utf-8")
-    log.info("HTML di anteprima: %s", out_html)
+    log.info("preview HTML: %s", out_html)
 
+    # The screenshot lands in a scratch file first: only the quantised copy is
+    # meant to be published, and the raw one must not linger next to it.
     raw_png = out_png.with_name(out_png.stem + ".raw.png")
-    render.html_to_png(html, raw_png, cfg)
-    report = postprocess.to_eink_png(raw_png, out_png, cfg)
-    raw_png.unlink(missing_ok=True)
+    try:
+        render.html_to_png(html, raw_png, cfg)
+        report = postprocess.to_eink_png(raw_png, out_png, cfg)
+    finally:
+        raw_png.unlink(missing_ok=True)
 
     problems = postprocess.validate(report, cfg)
     log.info(report.describe())
     for problem in problems:
-        log.error("immagine non valida: %s", problem)
+        log.error("invalid image: %s", problem)
     return 1 if problems else 0
 
 
 def cmd_generate(args) -> int:
+    """Fetch live data and render the dashboard."""
     cfg = load_config(args.config)
     forecast = fetch.fetch_forecast(cfg)
     air_quality = fetch.fetch_air_quality(cfg)
@@ -54,20 +63,23 @@ def cmd_generate(args) -> int:
 
 
 def cmd_preview(args) -> int:
+    """Render from a stored payload, so design work needs no network."""
     cfg = load_config(args.config)
     fixture = Path(args.fixture)
     forecast = json.loads(fixture.read_text(encoding="utf-8"))
-    # Alla fixture `forecast_X.json` corrisponde `air_quality_X.json`, se c'e'.
+    # Fixture `forecast_X.json` pairs with `air_quality_X.json`, when present.
     air_path = fixture.with_name(fixture.name.replace("forecast_", "air_quality_", 1))
     air_quality = (
         json.loads(air_path.read_text(encoding="utf-8")) if air_path.exists() else None
     )
-    # Ancoriamo "adesso" alla fixture, cosi' l'anteprima e' riproducibile.
-    now = datetime.fromisoformat(forecast["current"]["time"])
+    # Anchor "now" to the fixture, which makes the preview reproducible.
+    observed = forecast.get("current", {}).get("time")
+    now = datetime.fromisoformat(observed) if observed else None
     return _write_outputs(forecast, air_quality, cfg, Path(args.out), now=now)
 
 
 def cmd_inspect(args) -> int:
+    """Check an already generated PNG against the constraints of `eips`."""
     cfg = load_config(args.config)
     report = postprocess.inspect(Path(args.image))
     print(report.describe())
@@ -75,7 +87,7 @@ def cmd_inspect(args) -> int:
     for problem in problems:
         print(f"  ✗ {problem}")
     if not problems:
-        print("  ✓ compatibile con eips sul Kindle 4")
+        print("  ✓ compatible with eips on the Kindle 4")
     return 1 if problems else 0
 
 
@@ -85,17 +97,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    generate = subparsers.add_parser("generate", help="scarica i dati e genera il PNG")
+    generate = subparsers.add_parser("generate", help="fetch the data and render the PNG")
     generate.add_argument("--out", default="out/dashboard.png")
-    generate.add_argument("--save-fixture", help="salva la risposta grezza su file")
+    generate.add_argument("--save-fixture", help="also write the raw response to this file")
     generate.set_defaults(func=cmd_generate)
 
-    preview = subparsers.add_parser("preview", help="genera il PNG da una fixture locale")
+    preview = subparsers.add_parser("preview", help="render the PNG from a local fixture")
     preview.add_argument("--fixture", default=str(FIXTURES / "forecast_caoria.json"))
     preview.add_argument("--out", default="out/dashboard.png")
     preview.set_defaults(func=cmd_preview)
 
-    inspect = subparsers.add_parser("inspect", help="verifica un PNG gia' generato")
+    inspect = subparsers.add_parser("inspect", help="check an already generated PNG")
     inspect.add_argument("image")
     inspect.set_defaults(func=cmd_inspect)
 

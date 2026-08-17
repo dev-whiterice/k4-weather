@@ -1,3 +1,9 @@
+"""Shared fixtures.
+
+The JSON files under `fixtures/` are real Open-Meteo responses, so previews and
+tests are reproducible and never touch the network.
+"""
+
 import json
 from pathlib import Path
 
@@ -10,6 +16,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture
 def cfg() -> Config:
+    """The default configuration, pinned to the location of the fixtures."""
     return Config(
         location=Location(name="Caoria", latitude=46.19647, longitude=11.67804),
         units=Units(),

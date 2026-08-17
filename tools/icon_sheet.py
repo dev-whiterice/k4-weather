@@ -1,5 +1,5 @@
-"""Provino delle icone: le disegna alle dimensioni con cui appaiono davvero
-sulla dashboard, cosi' i problemi di leggibilita' si vedono prima di andare in CI.
+"""Icon contact sheet: draws every icon at the sizes it really appears on the
+dashboard, so legibility problems show up before CI does.
 
     PYTHONPATH=src python tools/icon_sheet.py out/icons.png
 """
@@ -10,11 +10,14 @@ import sys
 from pathlib import Path
 
 from k4weather.config import Config, Display, Location
-from k4weather.render import ICONS, _font_face_css, _icon_markup
 from k4weather.postprocess import to_eink_png
+from k4weather.render import ICONS, _font_face_css, _icon_markup, html_to_png
 
+# Current block, daily grid, footer. At 26px many ideas that work large stop
+# working at all, which is the point of the sheet.
 SIZES = [112, 26, 15]
 
+# Deliberately plain: the sheet is a tool, not a design surface.
 CSS = """
 body { margin:0; background:#fff; color:#000; font-family:Inter, sans-serif;
        -webkit-font-smoothing:antialiased; padding:16px 20px; }
@@ -24,6 +27,10 @@ body { margin:0; background:#fff; color:#000; font-family:Inter, sans-serif;
 .box { display:flex; align-items:center; justify-content:center; }
 svg { display:block; }
 """
+
+# Page padding plus the height of one row at the largest size.
+ROW_HEIGHT = 135
+SHEET_MARGIN = 60
 
 
 def main(out: str) -> None:
@@ -41,18 +48,20 @@ def main(out: str) -> None:
         f"<style>{CSS}</style>{''.join(rows)}"
     )
 
-    height = 60 + len(names) * 135
+    # Same pipeline as the dashboard, so the sheet shows the icons exactly as
+    # the panel will: 16 grays, no colour, no alpha.
     cfg = Config(
-        location=Location("provino", 0, 0),
-        display=Display(width=600, height=height, gray_levels=16),
+        location=Location("contact sheet", 0, 0),
+        display=Display(width=600, height=SHEET_MARGIN + len(names) * ROW_HEIGHT,
+                        gray_levels=16),
     )
 
-    from k4weather.render import html_to_png
-
     raw = Path(out).with_suffix(".raw.png")
-    html_to_png(html, raw, cfg)
-    report = to_eink_png(raw, Path(out), cfg)
-    raw.unlink(missing_ok=True)
+    try:
+        html_to_png(html, raw, cfg)
+        report = to_eink_png(raw, Path(out), cfg)
+    finally:
+        raw.unlink(missing_ok=True)
     print(report.describe())
 
 

@@ -1,64 +1,66 @@
 #!/usr/bin/env bash
-# Installa kindle-dash sul Kindle, configurato per k4-weather.
+# Installs kindle-dash on the Kindle, configured for k4-weather.
 #
-# GIRA SUL MAC, non sul Kindle. Da qualunque cartella:
+# RUNS ON THE MAC, not on the Kindle. From any directory:
 #
-#     ./kindle/install.sh                      # usa root@192.168.15.244
-#     ./kindle/install.sh root@192.168.1.50    # Kindle raggiungibile via Wi-Fi
+#     ./kindle/install.sh                      # uses root@192.168.15.244
+#     ./kindle/install.sh root@192.168.1.50    # Kindle reachable over Wi-Fi
 #
-# Non avvia nulla: alla fine la dashboard e' installata ma ferma, cosi' puoi
-# provarla in modalita' debug prima di lasciarla in mano al ciclo di sospensione.
+# It starts nothing: when it finishes the dashboard is installed but idle, so
+# you can try it in debug mode before handing it to the suspend loop.
 
 set -euo pipefail
 
 KINDLE="${1:-root@192.168.15.244}"
 REMOTE_DIR="/mnt/us/dashboard"
 
-# Percorsi relativi allo script, non alla cartella da cui lo lanci.
+# Paths relative to the script, not to the directory you launched it from.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="${HERE}/../build/kindle-dash"
 
 RELEASES="https://api.github.com/repos/pascalw/kindle-dash/releases/latest"
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
-fail() { printf '\033[31mErrore: %s\033[0m\n' "$1" >&2; exit 1; }
+fail() { printf '\033[31mError: %s\033[0m\n' "$1" >&2; exit 1; }
 
 for tool in curl tar ssh; do
-  command -v "$tool" >/dev/null || fail "manca il comando '$tool'"
+  command -v "$tool" >/dev/null || fail "missing command '$tool'"
 done
 
-step "Scarico kindle-dash"
+step "Downloading kindle-dash"
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
-asset="$(curl -sSfL "$RELEASES" | grep browser_download_url | cut -d'"' -f4)"
-[ -n "$asset" ] || fail "non trovo l'asset della release su GitHub"
+# head -n1: a release may carry several assets, and only the first is the
+# runtime archive. Without it `asset` would hold a multi-line list.
+asset="$(curl -sSfL "$RELEASES" | grep browser_download_url | cut -d'"' -f4 | head -n1)"
+[ -n "$asset" ] || fail "cannot find the release asset on GitHub"
 echo "    $asset"
-# L'archivio si espande piatto, senza cartella contenitore.
+# The archive expands flat, with no containing directory.
 curl -sSfL "$asset" | tar xz -C "$BUILD"
-[ -x "$BUILD/dash.sh" ] || fail "l'archivio non contiene dash.sh"
+[ -x "$BUILD/dash.sh" ] || fail "the archive does not contain dash.sh"
 
-step "Applico la configurazione di k4-weather"
+step "Applying the k4-weather configuration"
 cp "$HERE/local/env.sh" "$BUILD/local/env.sh"
 cp "$HERE/local/fetch-dashboard.sh" "$BUILD/local/fetch-dashboard.sh"
 url="$(grep -m1 '^DASH_URL=' "$BUILD/local/fetch-dashboard.sh" | cut -d'"' -f2)"
-echo "    sorgente immagine: $url"
+echo "    image source: $url"
 
-step "Verifico che l'immagine sia raggiungibile"
-# Meglio scoprire adesso che l'URL e' sbagliato, invece che davanti a uno
-# schermo e-ink che non si aggiorna e non dice perche'.
+step "Checking that the image is reachable"
+# Better to find out now that the URL is wrong, than in front of an e-ink
+# screen that does not refresh and does not say why.
 code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || true)"
 if [ "$code" = "200" ]; then
-  echo "    HTTP 200, l'immagine c'e'"
+  echo "    HTTP 200, the image is there"
 else
-  echo "    ATTENZIONE: HTTP ${code:-nessuna risposta}"
-  echo "    Il workflow 'dashboard' non ha ancora pubblicato sul branch output."
-  echo "    L'installazione prosegue: il Kindle funzionera' appena l'immagine esiste."
+  echo "    WARNING: HTTP ${code:-no response}"
+  echo "    The 'dashboard' workflow has not published to the output branch yet."
+  echo "    Installation continues: the Kindle will work as soon as the image exists."
 fi
 
-# USBNetwork non fa da server DHCP: macOS chiede un indirizzo, non riceve
-# risposta e ripiega su un link-local 169.254.x.x. A quel punto il traffico per
-# il Kindle esce dal Wi-Fi verso internet e va in timeout. L'indirizzo host
-# della subnet va messo a mano.
+# USBNetwork is not a DHCP server: macOS asks for an address, gets no answer
+# and falls back to a link-local 169.254.x.x. At that point traffic for the
+# Kindle leaves through the Wi-Fi towards the internet and times out. The host
+# address on the subnet has to be set by hand.
 diagnose_usbnet() {
   [ "$(uname)" = "Darwin" ] || return 0
   local iface subnet
@@ -71,64 +73,65 @@ diagnose_usbnet() {
 
   cat >&2 <<EOF
 
-L'interfaccia USBNetwork ($iface) esiste ma non ha un indirizzo su ${subnet}.x:
+The USBNetwork interface ($iface) exists but has no address on ${subnet}.x:
 
 $(ifconfig "$iface" | grep -E 'inet |status' | sed 's/^/    /')
 
-Assegnalo e rilancia questo script:
+Assign one and run this script again:
 
     sudo ifconfig $iface ${subnet}.201 netmask 255.255.255.0
 
-Va rifatto a ogni riconnessione del cavo. Non impostare un gateway su questa
-interfaccia: verrebbe preferita al Wi-Fi e resteresti senza internet.
+This has to be redone every time the cable is reconnected. Do not set a
+gateway on this interface: it would be preferred over the Wi-Fi and leave you
+without internet.
 EOF
   exit 1
 }
 
-step "Copio su $KINDLE:$REMOTE_DIR"
+step "Copying to $KINDLE:$REMOTE_DIR"
 ssh -o ConnectTimeout=10 "$KINDLE" "mkdir -p $REMOTE_DIR" 2>/dev/null || {
   diagnose_usbnet
-  fail "non riesco a raggiungere $KINDLE (USBNetwork attivo? cavo collegato?)"
+  fail "cannot reach $KINDLE (is USBNetwork on? is the cable connected?)"
 }
-# Niente rsync: macOS 15+ monta openrsync (compatibile rsync 2.6.9) e il
-# Kindle ha il tar di busybox. Un tar su SSH parla la lingua di entrambi.
+# No rsync: macOS 15+ ships openrsync (compatible with rsync 2.6.9) and the
+# Kindle has busybox tar. A tar over SSH speaks a language both understand.
 #
-# COPYFILE_DISABLE evita i sidecar AppleDouble `._*`, e --format=ustar evita
-# gli header pax estesi: il tar di busybox non li capisce e stampa una raffica
-# di "skipping header 'x'".
+# COPYFILE_DISABLE avoids the AppleDouble `._*` sidecars, and --format=ustar
+# avoids extended pax headers: busybox tar does not understand them and prints
+# a burst of "skipping header 'x'".
 COPYFILE_DISABLE=1 tar c --format=ustar -C "$BUILD" . \
   | ssh "$KINDLE" "mkdir -p '$REMOTE_DIR' && cd '$REMOTE_DIR' && tar x"
 
-# Ripulisce i residui di installazioni fatte prima di questa correzione.
-# Il find di busybox non ha -delete, e con -exec cancella durante la visita
-# saltandone una parte: meglio raccogliere prima la lista e poi cancellare.
+# Cleans up leftovers from installations made before that fix.
+# busybox find has no -delete, and with -exec it deletes during the walk and
+# skips part of it: collect the list first, then remove.
 ssh "$KINDLE" "find '$REMOTE_DIR' -name '._*' | xargs rm -f" 2>/dev/null || true
-echo "    copiati $(find "$BUILD" -type f | wc -l | tr -d ' ') file"
+echo "    copied $(find "$BUILD" -type f | wc -l | tr -d ' ') files"
 
-step "Ripristino i permessi di esecuzione"
-# Su /mnt/us (filesystem FAT) i permessi possono non essere memorizzati: se il
-# chmod non attacca non e' un problema, la partizione e' montata eseguibile.
+step "Restoring the executable bits"
+# On /mnt/us (a FAT filesystem) permissions may not be stored: if the chmod
+# does not stick it is not a problem, the partition is mounted executable.
 ssh "$KINDLE" "chmod +x $REMOTE_DIR/*.sh $REMOTE_DIR/local/*.sh \
   $REMOTE_DIR/xh $REMOTE_DIR/next-wakeup" 2>/dev/null \
-  || echo "    chmod non applicabile (FAT): normale, si prosegue"
+  || echo "    chmod not applicable (FAT): normal, carrying on"
 
 cat <<EOF
 
-Installazione completata. Non ho avviato niente di proposito.
+Installation complete. Nothing was started, on purpose.
 
-Prova prima i singoli pezzi, collegandoti al Kindle:
+Try the pieces one at a time first, from the Kindle:
 
     ssh $KINDLE
     cd $REMOTE_DIR
-    ./local/fetch-dashboard.sh /tmp/test.png && echo OK    # solo download
-    eips -f -g /tmp/test.png                               # solo disegno
-    DEBUG=true ./start.sh                                  # ciclo completo, Ctrl-C per uscire
+    ./local/fetch-dashboard.sh /tmp/test.png && echo OK    # download only
+    eips -f -g /tmp/test.png                               # drawing only
+    DEBUG=true ./start.sh                                  # full loop, Ctrl-C to quit
 
-Quando funziona, l'avvio vero (in background, poi il Kindle si sospende):
+Once that works, the real start (background, then the Kindle suspends):
 
     ssh $KINDLE $REMOTE_DIR/start.sh
 
-Per riprenderti il Kindle come lettore di ebook:
+To get your Kindle back as an ebook reader:
 
     ssh $KINDLE '$REMOTE_DIR/stop.sh; /etc/init.d/framework start'
 EOF

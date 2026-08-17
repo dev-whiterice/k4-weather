@@ -1,3 +1,5 @@
+"""Rendering: the HTML must be self-contained, the PNG must satisfy `eips`."""
+
 from datetime import datetime
 
 import pytest
@@ -13,34 +15,45 @@ def html(forecast, air_quality, cfg):
     return build_html(build_dashboard(forecast, air_quality, cfg, now=now), cfg)
 
 
-def test_html_e_autoconsistente(html):
-    # Nessuna risorsa esterna: in CI la pagina viene renderizzata offline e
-    # il file deve restare apribile nel browser per l'anteprima di design.
+def test_html_is_self_contained(html):
+    # No external resource: CI renders the page offline, and the file has to
+    # stay openable in a browser for design previews.
     assert "data:font/woff2;base64," in html
-    # Il namespace xmlns degli SVG e' un URL ma non viene mai scaricato:
-    # cerchiamo solo i riferimenti che il browser proverebbe a caricare.
+    # The xmlns of an SVG is a URL but is never fetched: only look for the
+    # references a browser would actually try to load.
     for reference in ('src="http', 'href="http', "url(http", 'src="fonts/', 'href="style.css'):
         assert reference not in html
 
 
-def test_html_contiene_i_dati(html):
-    assert "CAORIA" not in html  # il maiuscolo e' un effetto CSS, non del dato
+def test_html_carries_the_data(html):
+    assert "CAORIA" not in html  # the uppercase is a CSS effect, not the datum
     assert "Caoria" in html
     assert "domenica 16 agosto" in html
-    assert "percepiti" in html
+    assert "percepita" in html
 
 
-def test_svg_inline_non_viene_escapato(html):
+def test_html_carries_the_daily_wind(html, forecast, cfg):
+    now = datetime.fromisoformat(forecast["current"]["time"])
+    days = build_dashboard(forecast, None, cfg, now=now).days
+    assert html.count('class="d-wind"') == len(days)
+    assert html.count(">km/h<") == len(days)
+
+
+def test_inline_svg_is_not_escaped(html):
     assert "&lt;svg" not in html
-    assert html.count("<svg") >= 8  # icona principale + 7 giorni
+    assert html.count("<svg") >= 8  # main icon + 7 days
+
+
+def test_jinja_comments_do_not_reach_the_output(html):
+    assert "{#" not in html and "#}" not in html
 
 
 @pytest.mark.slow
-def test_png_finale_e_valido_per_eips(tmp_path, html, cfg):
+def test_final_png_is_valid_for_eips(tmp_path, html, cfg):
     raw = html_to_png(html, tmp_path / "raw.png", cfg)
     report = to_eink_png(raw, tmp_path / "dashboard.png", cfg)
 
     assert validate(report, cfg) == []
-    # Un PNG grigio a 16 livelli di questa complessita' resta ben sotto i 100 kB;
-    # se sfonda, qualcosa e' tornato a colori o e' entrato del rumore.
+    # A 16-level gray PNG of this complexity stays well below 100 kB; blowing
+    # past that means colour or noise crept back in.
     assert report.size_bytes < 100_000

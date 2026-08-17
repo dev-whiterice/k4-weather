@@ -1,11 +1,13 @@
-"""Mappatura dei codici meteo WMO usati da Open-Meteo.
+"""Mapping of the WMO weather codes used by Open-Meteo.
 
-Ogni codice produce una descrizione in italiano e un nome di icona. Le icone
-"variabili" hanno una versione diurna e una notturna: `icon_for` aggiunge il
-suffisso -day/-night solo per quelle presenti in DAY_NIGHT_ICONS.
+Every code yields an Italian description (the dashboard is read in Italian) and
+an icon name. "Variable" icons have a day and a night version: `icon_for` only
+appends the -day/-night suffix for the names listed in DAY_NIGHT_ICONS.
 """
 
-# codice WMO -> (descrizione lunga, descrizione breve, icona)
+# WMO code -> (long description, short description, icon).
+# The short description is kept alongside the long one for the day the grid
+# gets tighter; only the long one is rendered today.
 WMO_CODES: dict[int, tuple[str, str, str]] = {
     0: ("Sereno", "Sereno", "clear"),
     1: ("Prevalentemente sereno", "Poco nuv.", "mostly-clear"),
@@ -37,17 +39,20 @@ WMO_CODES: dict[int, tuple[str, str, str]] = {
     99: ("Temporale con grandine forte", "Temporale", "thunderstorm-hail"),
 }
 
+# Icons that exist in a -day and a -night variant.
 DAY_NIGHT_ICONS = {"clear", "mostly-clear", "partly-cloudy"}
 
+# Used for codes the API may add in the future, and for a missing code.
 _UNKNOWN = ("Non disponibile", "N.D.", "unknown")
 
 
 def describe(code: int | None) -> str:
+    """Long Italian description for a WMO code."""
     return WMO_CODES.get(code, _UNKNOWN)[0] if code is not None else _UNKNOWN[0]
 
 
 def icon_for(code: int | None, is_day: bool = True) -> str:
-    """Nome del file icona (senza estensione) per un codice WMO."""
+    """Icon file name (without extension) for a WMO code."""
     base = WMO_CODES.get(code, _UNKNOWN)[2] if code is not None else _UNKNOWN[2]
     if base in DAY_NIGHT_ICONS:
         return f"{base}-{'day' if is_day else 'night'}"

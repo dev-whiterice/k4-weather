@@ -1,13 +1,13 @@
 #!/usr/bin/env sh
-# Scarica la dashboard e la scrive in "$1", come richiede kindle-dash.
-# Va copiato in /mnt/us/dashboard/local/fetch-dashboard.sh sul Kindle.
+# Downloads the dashboard and writes it to "$1", as kindle-dash expects.
+# Goes to /mnt/us/dashboard/local/fetch-dashboard.sh on the Kindle.
 #
-# curl e wget di serie sul Kindle 4 non parlano TLS moderno: usiamo `xh`,
-# il client statico che kindle-dash include nella propria release.
+# The stock curl and wget on the Kindle 4 do not speak modern TLS: we use `xh`,
+# the static client that kindle-dash ships in its own release.
 
-# Il branch `output` del repository, dove il workflow pubblica l'immagine.
-# Il Kindle non ha modo di autenticarsi: la sorgente deve essere leggibile
-# senza token, ed e' il motivo per cui il repository e' pubblico.
+# The `output` branch of the repository, where the workflow publishes the image.
+# The Kindle has no way to authenticate: the source must be readable without a
+# token, which is why the repository is public.
 DASH_URL="https://raw.githubusercontent.com/dev-whiterice/k4-weather/output/dashboard.png"
 
 XH="$(dirname "$0")/../xh"
@@ -17,8 +17,11 @@ ATTEMPTS=3
 
 i=1
 while [ "$i" -le "$ATTEMPTS" ]; do
-  # Il parametro di cache-busting evita che GitHub Pages serva la copia
-  # precedente rimasta in cache intermedia.
+  # The cache-busting parameter keeps the CDN in front of raw.githubusercontent
+  # from serving the previous image.
+  #
+  # Download to a scratch file first: a half-written PNG must never reach
+  # "$TARGET", or eips would draw a torn image.
   if "$XH" -d -q --follow -o "$TMP" get "${DASH_URL}?t=$(date +%s)" && [ -s "$TMP" ]; then
     mv "$TMP" "$TARGET"
     exit 0
@@ -28,7 +31,7 @@ while [ "$i" -le "$ATTEMPTS" ]; do
   i=$((i + 1))
 done
 
-# Uscendo con errore senza toccare "$TARGET" lo schermo conserva l'ultima
-# immagine buona invece di svuotarsi: preferibile a un pannello bianco.
-echo "k4-weather: download fallito dopo ${ATTEMPTS} tentativi" >&2
+# Exiting non-zero without touching "$TARGET" makes kindle-dash leave the last
+# good image on screen, which beats a blank panel.
+echo "k4-weather: download failed after ${ATTEMPTS} attempts" >&2
 exit 1

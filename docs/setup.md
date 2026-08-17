@@ -1,54 +1,54 @@
-# Messa in servizio
+# Putting it into service
 
-Procedura completa dal repository al Kindle appeso al muro.
+The full procedure, from the repository to the Kindle hanging on the wall.
 
-## Perche' il repository e' pubblico
+## Why the repository is public
 
-Il Kindle 4 scarica l'immagine con un client HTTP minimale e non ha modo di
-autenticarsi in sicurezza: un token scritto in chiaro su una partizione FAT non
-protetta e' peggio del problema che risolve. La sorgente deve quindi essere
-leggibile senza credenziali.
+The Kindle 4 downloads the image with a minimal HTTP client and has no way to
+authenticate securely: a token written in clear text on an unprotected FAT
+partition is worse than the problem it solves. The source therefore has to be
+readable without credentials.
 
-C'e' anche una ragione di costo, che da sola decide la questione: 48 esecuzioni
-al giorno da un paio di minuti l'una fanno circa **3.000 minuti di Actions al
-mese**, contro i 2.000 inclusi nel piano gratuito per i repository privati. Sui
-repository pubblici Actions non ha limiti.
+There is also a cost reason, which settles the question on its own: 48 runs a
+day of a couple of minutes each add up to roughly **3,000 Actions minutes a
+month**, against the 2,000 included in the free plan for private repositories.
+On public repositories Actions has no limit.
 
 ```
-k4-weather (pubblico)
-  main    codice, config, workflow
+k4-weather (public)
+  main    code, config, workflow
   output  dashboard.png  ──►  raw.githubusercontent.com  ──►  Kindle
 ```
 
-Il branch `output` viene riscritto a ogni run con un force push di un singolo
-commit: non accumula storia e resta di dimensione costante.
+The `output` branch is rewritten on every run with a force push of a single
+commit: it accumulates no history and stays a constant size.
 
-> Il repository e' pubblico: **l'immagine e il codice sono leggibili da
-> chiunque**, e la dashboard riporta il nome della localita. Diventano pubblici
-> anche i metadati dei commit, indirizzo email dell'autore compreso.
+> The repository is public: **the image and the code are readable by anyone**,
+> and the dashboard shows the name of the location. Commit metadata becomes
+> public too, the author's email address included.
 
 ---
 
-## 1. Rendi pubblico il repository
+## 1. Make the repository public
 
 ```sh
 gh repo edit dev-whiterice/k4-weather --visibility public \
   --accept-visibility-change-consequences
 ```
 
-## 2. Push del codice
+## 2. Push the code
 
 ```sh
 git add -A
-git commit -m "dashboard meteo per Kindle 4"
+git commit -m "weather dashboard for the Kindle 4"
 git push origin main
 ```
 
-Il push su `main` fa gia' partire il workflow: [`dashboard.yml`](../.github/workflows/dashboard.yml)
-si attiva sia a orario sia quando cambiano `src/`, `config.yaml` o il workflow
-stesso.
+The push to `main` already starts the workflow:
+[`dashboard.yml`](../.github/workflows/dashboard.yml) triggers both on schedule
+and whenever `src/`, `config.yaml` or the workflow itself changes.
 
-## 3. Verifica la prima immagine
+## 3. Check the first image
 
 ```sh
 gh run watch --repo dev-whiterice/k4-weather
@@ -57,58 +57,74 @@ curl -sI https://raw.githubusercontent.com/dev-whiterice/k4-weather/output/dashb
 # HTTP/2 200
 ```
 
-Da qui in poi il workflow riparte da solo ai minuti :00 e :30.
+From here on the workflow restarts by itself at :00 and :30.
 
-## 4. Tieni vivo lo scheduler (consigliato)
+## 4. Keep the scheduler alive (recommended)
 
-GitHub disattiva i workflow schedulati dopo **60 giorni senza attivita** sul
-repository, e i commit fatti con il token automatico **non contano**. Senza
-rimedio, la dashboard si congela dopo due mesi.
+GitHub disables scheduled workflows after **60 days without activity** on the
+repository, and commits made with the automatic token **do not count**. With no
+remedy, the dashboard freezes after two months.
 
-Crea un PAT fine-grained su
+Create a fine-grained PAT at
 **github.com/settings/personal-access-tokens/new**:
 
-| Campo | Valore |
+| Field | Value |
 |---|---|
 | Token name | `k4-weather-publish` |
 | Resource owner | `dev-whiterice` |
 | Repository access | *Only select repositories* → `k4-weather` |
 | Permissions → Repository → **Contents** | **Read and write** |
 
-e salvalo come secret:
+and store it as a secret:
 
 ```sh
 gh secret set PUBLISH_TOKEN --repo dev-whiterice/k4-weather
 ```
 
-Il workflow lo usa al posto del token automatico e i commit risultano tuoi.
-Segnati la scadenza in calendario: e' l'unica del progetto, e alla scadenza la
-pubblicazione si ferma senza preavviso.
+The workflow uses it instead of the automatic token and the commits show up as
+yours. Put the expiry date in your calendar: it is the only one in the project,
+and when it passes publishing stops without warning.
 
-### Pagina di anteprima (opzionale)
+If the token is ever rejected, the workflow does not freeze the dashboard: on
+this same repository it falls back to the automatic token and records a warning
+in the run summary. On a different `PUBLISH_REPO` there is no fallback and the
+run fails, on purpose.
 
-Il workflow pubblica anche un `index.html`. In *Settings → Pages*, scegliendo
-branch `output` e cartella `/`, ottieni
-`https://dev-whiterice.github.io/k4-weather/` per controllare la dashboard dal
-telefono. Il Kindle continua a usare `raw.githubusercontent.com`: ha una cache
-piu corta e una catena di redirect in meno.
+### Preview page (optional)
+
+The workflow also publishes an `index.html`. Under *Settings → Pages*, choosing
+branch `output` and folder `/`, you get
+`https://dev-whiterice.github.io/k4-weather/` to check the dashboard from your
+phone. The Kindle keeps using `raw.githubusercontent.com`: shorter cache, one
+redirect chain fewer.
 
 ---
 
 ## 5. Kindle
 
-Prerequisiti una tantum: jailbreak del Kindle 4 NT, KUAL, USBNetwork per avere
-SSH, Wi-Fi configurato. Riferimento: [wiki di
-MobileRead](https://wiki.mobileread.com/wiki/Kindle4NTHacking).
+One-off prerequisites: a jailbroken Kindle 4 NT, KUAL, USBNetwork for SSH, and
+Wi-Fi configured. Reference: [the MobileRead
+wiki](https://wiki.mobileread.com/wiki/Kindle4NTHacking).
+
+The scripted route is [`kindle/install.sh`](../kindle/install.sh), which
+downloads the runtime, applies our configuration, checks that the image is
+reachable, copies everything over and starts nothing:
 
 ```sh
-# Runtime: kindle-dash gestisce wifi, TLS, sospensione e sveglia da RTC.
-# L'archivio e' un .tgz che si espande piatto, quindi la cartella va creata.
+./kindle/install.sh                      # uses root@192.168.15.244
+./kindle/install.sh root@192.168.1.50    # Kindle reachable over Wi-Fi
+```
+
+By hand, it comes down to:
+
+```sh
+# Runtime: kindle-dash handles wifi, TLS, suspend and RTC wake-up.
+# The archive is a .tgz that expands flat, so the directory has to exist first.
 mkdir -p kindle-dash
 curl -sSL "$(curl -sSL https://api.github.com/repos/pascalw/kindle-dash/releases/latest \
-  | grep browser_download_url | cut -d'"' -f4)" | tar xz -C kindle-dash
+  | grep browser_download_url | cut -d'"' -f4 | head -n1)" | tar xz -C kindle-dash
 
-# La nostra configurazione: URL gia' impostato, non serve modificare nulla
+# Our configuration: the URL is already set, nothing to edit
 cp kindle/local/env.sh             kindle-dash/local/env.sh
 cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
 
@@ -117,15 +133,14 @@ ssh root@192.168.15.244 'chmod +x /mnt/us/dashboard/*.sh /mnt/us/dashboard/local
   /mnt/us/dashboard/xh /mnt/us/dashboard/next-wakeup'
 ```
 
-Prima di lanciarlo davvero, provalo in modalita' debug: resta in primo piano,
-non sospende il dispositivo e stampa tutto (vedi
-[`kindle/README.md`](../kindle/README.md#prova-in-modalita-debug)).
+Before really launching it, try it in debug mode: it stays in the foreground,
+does not suspend the device and prints everything (see
+[`kindle/README.md`](../kindle/README.md#try-it-in-debug-mode)).
 
-Il Kindle si sospende dopo 10-15 secondi e si risveglia ai minuti :15 e :45,
-sfasato di 15 minuti rispetto alla generazione per assorbire il ritardo del
-cron di GitHub Actions.
+The Kindle suspends after 10-15 seconds and wakes at :15 and :45, offset by 15
+minutes from generation to absorb the delay of the GitHub Actions cron.
 
-### Verifica sul dispositivo
+### Check on the device
 
 ```sh
 ssh kindle
@@ -135,22 +150,22 @@ eips -f -g /tmp/test.png
 
 ---
 
-## Se qualcosa non va
+## If something goes wrong
 
-| Sintomo | Causa e rimedio |
+| Symptom | Cause and remedy |
 |---|---|
-| `curl` sull'URL raw da 404 | Il branch `output` non esiste ancora: il workflow non e' mai andato a buon fine |
-| Immagine **deformata o schiacciata** sul Kindle | Il PNG non e' in scala di grigi. `make inspect` lo intercetta prima della pubblicazione |
-| `fetch-dashboard.sh` esce in errore | Wi-Fi assente o URL sbagliato. Lo schermo conserva l'ultima immagine buona invece di sbiancarsi |
-| Lo schermo mostra un orario fermo da giorni | Scheduler disattivato dopo 60 giorni di inattivita: vedi il punto 4 |
-| Scritta *dati non aggiornati* nel piede | L'immagine e' fresca ma l'osservazione di Open-Meteo ha piu di 90 minuti |
-| Ghosting sullo schermo | `FULL_DISPLAY_REFRESH_RATE` in `kindle/local/env.sh`: abbassalo per fare refresh completi piu spesso |
-| Batteria che cala troppo in fretta | Limita `REFRESH_SCHEDULE` alle ore diurne, per esempio `"15,45 7-23 * * *"` |
+| `curl` on the raw URL returns 404 | The `output` branch does not exist yet: the workflow has never completed successfully |
+| Image **skewed or squashed** on the Kindle | The PNG is not grayscale. `make inspect` catches this before publication |
+| `fetch-dashboard.sh` exits with an error | No Wi-Fi, or the wrong URL. The screen keeps the last good image instead of going blank |
+| The screen shows a time frozen days ago | Scheduler disabled after 60 days of inactivity: see step 4 |
+| *dati non aggiornati* in the footer | The image is fresh but the Open-Meteo observation is more than 90 minutes old |
+| Ghosting on the screen | `FULL_DISPLAY_REFRESH_RATE` in `kindle/local/env.sh`: lower it to do full refreshes more often |
+| Battery draining too fast | Restrict `REFRESH_SCHEDULE` to daytime hours, for example `"15,45 7-23 * * *"` |
 
-## Manutenzione
+## Maintenance
 
-- **Cambiare localita**: modifica `location` in `config.yaml` e fai push. Il
-  workflow riparte al push e l'immagine si aggiorna in pochi minuti.
-- **Ritoccare il design**: `make preview`, poi apri `out/dashboard.html` nel
-  browser. Dopo aver toccato le icone, `make icons`.
-- **Scadenza del PAT**: unica scadenza del progetto, vedi il punto 4.
+- **Changing location**: edit `location` in `config.yaml` and push. The
+  workflow restarts on the push and the image updates within minutes.
+- **Tweaking the design**: `make preview`, then open `out/dashboard.html` in a
+  browser. After touching the icons, `make icons`.
+- **PAT expiry**: the only deadline in the project, see step 4.

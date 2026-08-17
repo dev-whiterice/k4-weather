@@ -1,8 +1,8 @@
-"""Rendering: modello -> HTML autoconsistente -> screenshot PNG.
+"""Rendering: model -> self-contained HTML -> PNG screenshot.
 
-L'HTML incorpora font (base64) e icone (SVG inline) in modo da non dipendere da
-risorse esterne: lo stesso file si apre nel browser per l'anteprima di design e
-viene dato in pasto a Chromium headless in CI, con risultato identico.
+The HTML embeds fonts (base64) and icons (inline SVG) so that it depends on no
+external resource: the very same file opens in a browser for design previews
+and is fed to headless Chromium in CI, with identical results.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ TEMPLATES = Path(__file__).parent / "templates"
 FONTS = TEMPLATES / "fonts"
 ICONS = TEMPLATES / "icons"
 
-# (famiglia CSS, peso, file)
+# (CSS family, weight, file)
 FONT_FACES = [
     ("Inter", 400, "Inter-Regular.woff2"),
     ("Inter", 500, "Inter-Medium.woff2"),
@@ -34,6 +34,7 @@ FONT_FACES = [
 
 @lru_cache(maxsize=1)
 def _font_face_css() -> str:
+    """`@font-face` rules with the woff2 files inlined as data URIs."""
     blocks = []
     for family, weight, filename in FONT_FACES:
         encoded = base64.b64encode((FONTS / filename).read_bytes()).decode("ascii")
@@ -47,20 +48,31 @@ def _font_face_css() -> str:
 
 @lru_cache(maxsize=64)
 def _icon_markup(name: str) -> Markup:
+    """Inline SVG for an icon name, falling back to `unknown.svg`.
+
+    Marked safe on purpose: the files are part of the repository, never user
+    input, and escaping them would print the markup instead of drawing it.
+    """
     path = ICONS / f"{name}.svg"
     if not path.exists():
         path = ICONS / "unknown.svg"
     return Markup(path.read_text(encoding="utf-8").strip())
 
 
-def build_html(dashboard: Dashboard, cfg: Config) -> str:
-    env = Environment(
+@lru_cache(maxsize=1)
+def _environment() -> Environment:
+    """Jinja environment for the bundled templates, built once per process."""
+    return Environment(
         loader=FileSystemLoader(TEMPLATES),
         autoescape=select_autoescape(["html", "j2"], default_for_string=True),
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    template = env.get_template("dashboard.html.j2")
+
+
+def build_html(dashboard: Dashboard, cfg: Config) -> str:
+    """Render the dashboard model into a single self-contained HTML document."""
+    template = _environment().get_template("dashboard.html.j2")
     return template.render(
         d=dashboard,
         cfg=cfg,
@@ -71,7 +83,7 @@ def build_html(dashboard: Dashboard, cfg: Config) -> str:
 
 
 def html_to_png(html: str, output: Path, cfg: Config) -> Path:
-    """Screenshot dell'HTML con Chromium headless."""
+    """Screenshot the HTML with headless Chromium."""
     from playwright.sync_api import sync_playwright
 
     width, height = cfg.display.width, cfg.display.height
@@ -79,15 +91,24 @@ def html_to_png(html: str, output: Path, cfg: Config) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--force-color-profile=srgb", "--font-render-hinting=full"])
-        page = browser.new_context(
-            viewport={"width": width, "height": height},
-            device_scale_factor=scale,
-        ).new_page()
-        page.set_content(html, wait_until="load")
-        # I font sono inline, ma il layout va misurato solo a caricamento completo.
-        page.evaluate("() => document.fonts.ready")
-        page.screenshot(path=str(output), type="png",
-                        clip={"x": 0, "y": 0, "width": width, "height": height})
-        browser.close()
+        # sRGB and full hinting keep the output identical between a developer's
+        # machine and the CI runner.
+        browser = p.chromium.launch(
+            args=["--force-color-profile=srgb", "--font-render-hinting=full"]
+        )
+        try:
+            page = browser.new_context(
+                viewport={"width": width, "height": height},
+                device_scale_factor=scale,
+            ).new_page()
+            page.set_content(html, wait_until="load")
+            # Fonts are inlined, but the layout must only be measured once they
+            # are actually loaded.
+            page.evaluate("() => document.fonts.ready")
+            page.screenshot(path=str(output), type="png",
+                            clip={"x": 0, "y": 0, "width": width, "height": height})
+        finally:
+            # Without this a failed screenshot leaks a Chromium process and the
+            # CI job hangs until its timeout.
+            browser.close()
     return output

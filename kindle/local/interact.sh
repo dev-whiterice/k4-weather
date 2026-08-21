@@ -119,9 +119,23 @@ rm -f "$CAPTURE"
 # not work — the one failure a wall panel must not have.
 dd if="$KEY_DEVICE" of="$CAPTURE" bs="$EVENT_SIZE" 2>/dev/null &
 reader=$!
+
 # The reader is killed on every exit path: leaving it holding the input device
 # across a suspend would keep a `dd` alive for as long as the panel runs.
-trap 'kill "$reader" 2>/dev/null' EXIT INT TERM
+cleanup() { kill "$reader" 2>/dev/null; }
+trap cleanup EXIT
+
+# A signal must still kill this script, and be seen to have killed it. A trap
+# that cleans up and returns swallows the signal: the loop below carries on to
+# the end of its window, and `dash.sh` — which only stops when a child of it
+# dies of a signal — carries on too. So Ctrl-C during `DEBUG=true ./start.sh`
+# would stop nothing at all, and that ten-second window is the documented way
+# to interrupt the panel by hand.
+#
+# Clearing the trap and re-raising is what makes the second one fatal, and
+# leaves the conventional 128+signal status behind for whoever is waiting.
+trap 'cleanup; trap - INT;  kill -INT  $$' INT
+trap 'cleanup; trap - TERM; kill -TERM $$' TERM
 
 current=$(loc_current) || current=""
 

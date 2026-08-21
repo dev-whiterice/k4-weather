@@ -45,13 +45,14 @@
     </div>
   </div>
 
-  {#- The indoor temperature. The Kindle writes the number itself, with eips,
-      into this box: the sensor is on the device and this image is built in the
-      cloud. It is the one element on the page whose position has to be exact
-      to the pixel — eips writes on a fixed character grid — so it carries the
-      coordinates model.py computed, and the rule, the label and the degree
-      sign hang off it instead of being laid out beside it. The dash is what
-      shows until the device fills it in, or if its sensor cannot be read. #}
+  {#- The indoor temperature. The Kindle writes the number itself into this
+      box — with fbink, or with eips where fbink is not installed: the sensor is
+      on the device and this image is built in the cloud. It is the one element
+      on the page whose position has to be exact to the pixel, since both those
+      programs write on a fixed character grid, so it carries the coordinates
+      model.py computed, and the rule, the label and the degree sign hang off it
+      instead of being laid out beside it. The dash is what shows until the
+      device fills it in, or if its sensor cannot be read. #}
   {%- if d.indoor %}
   <div class="indoor-slot" style="left: {{ d.indoor.x }}px; top: {{ d.indoor.y }}px;
        width: {{ d.indoor.width }}px; height: {{ d.indoor.height }}px"

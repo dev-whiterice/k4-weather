@@ -5,14 +5,16 @@ writes its own temperature on top of it and goes back to sleep. All the fragile
 parts — waiting for Wi-Fi, modern TLS, suspend to RAM, wake-up scheduled by the
 hardware clock — are already solved by
 [pascalw/kindle-dash](https://github.com/pascalw/kindle-dash), used here as the
-runtime. This directory holds the four files that replace or extend its own:
+runtime. This directory holds the files that replace or extend its own:
 
 | File | Role |
 |---|---|
 | `local/env.sh` | configuration of the loop, and of everything below |
 | `local/fetch-dashboard.sh` | the download, with retries |
 | `local/indoor-temp.sh` | the temperature sensor, read and calibrated |
-| `local/draw.sh` | `eips` plus the temperature stamped on top |
+| `local/draw.sh` | `eips` plus the temperature stamped on top, with `fbink` |
+| `extensions/k4weather/` | the KUAL menu, to start the panel without a computer |
+| `fbink` | not in this repository: the binary that draws the value large (below) |
 
 ## What `kindle-dash` actually does
 
@@ -76,6 +78,7 @@ cp kindle/local/env.sh             kindle-dash/local/env.sh
 cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
 cp kindle/local/indoor-temp.sh     kindle-dash/local/indoor-temp.sh
 cp kindle/local/draw.sh            kindle-dash/local/draw.sh
+cp kindle/fbink                    kindle-dash/fbink        # optional, see below
 sed -i.bak 's|/usr/sbin/eips|"$DIR/local/draw.sh"|g' kindle-dash/dash.sh
 
 # 3. Copy to the Kindle (USBNetwork on, cable connected)
@@ -83,15 +86,23 @@ rsync -vr kindle-dash/ root@192.168.15.244:/mnt/us/dashboard
 
 # 4. Restore the executable bits, which the transfer can lose
 ssh root@192.168.15.244 'chmod +x /mnt/us/dashboard/*.sh \
-  /mnt/us/dashboard/local/*.sh /mnt/us/dashboard/xh /mnt/us/dashboard/next-wakeup'
+  /mnt/us/dashboard/local/*.sh /mnt/us/dashboard/xh \
+  /mnt/us/dashboard/next-wakeup /mnt/us/dashboard/fbink'
+
+# 5. Optional, and only if KUAL is installed: the menu entries
+rsync -vr kindle/extensions/k4weather/ root@192.168.15.244:/mnt/us/extensions/k4weather
+ssh root@192.168.15.244 'chmod +x /mnt/us/extensions/k4weather/bin/*.sh'
 ```
 
 As an alternative to step 3, a Kindle plugged in as a normal USB drive exposes
 `/mnt/us` as a disk: you can copy the `dashboard` folder in Finder and use SSH
 only for the commands.
 
-`DASH_URL` in `fetch-dashboard.sh` already points at the `output` branch of the
-repository. It only needs changing if you rename the repository.
+`DASH_URL` in `fetch-dashboard.sh` already points at the GitHub Pages site that
+serves the `output` branch — not at `raw.githubusercontent.com`, whose rate
+limit would freeze the panel ([why, and how to turn Pages
+on](../docs/setup.md#3-turn-on-pages)). It embeds owner and repository name, so
+it needs changing if either does.
 
 ### If SSH times out with USBNetwork on
 
@@ -239,21 +250,35 @@ the screen is up, so the installer rewrites those call sites to
 then writes the value on top of it with a second call.
 
 ```
-eips -g dash.png          the dashboard, dash included
-eips 42 7 "  21"          the value, in the blank left for it
+eips -g dash.png                                        the dashboard, dash included
+fbink -q -F IBM -S 3 -x 0 -y 0 -X 492 -Y 126 -- " 21"   the value, in the blank
 ```
 
-Those coordinates are **character cells**, not pixels: `eips` writes text on a
-fixed grid, believed to be 12×20 px cells — 50 columns by 40 rows on this panel
-— which is what the layout reserves. `INDOOR_TEMP_COL/ROW/CHARS` in
-`local/env.sh` say where the value goes and must match `INDOOR_SLOT_COL/ROW/CHARS`
-in `src/k4weather/model.py`, which is where the hole is left. Change one and you
-have to change the other.
+The second call is **not** `eips`. `eips` has one font and one size, 12×20 px
+cells, which next to an outdoor temperature 96 px tall reads as a footnote.
+[`fbink`](https://github.com/NiLuJe/FBInk) scales its 8×16 bitmap font by a
+whole number — `-S 3` gives characters of 24×48 px — and `-X`/`-Y` place them to
+the pixel instead of to the cell.
 
-Nothing in the documentation of `eips` states that cell size outright, so the
-first draw on a real device is also the measurement. If the number lands off
-its blank, `COL` and `ROW` are the knobs — move the slot in the generator by the
-same amount, or the dash underneath will still be sitting next to it.
+It is a static ARM binary, not ours to vendor: download the **legacy** build
+(the Kindle 4 is an einkfb device, not one of the newer mxcfb ones) from [its
+releases](https://github.com/NiLuJe/FBInk/releases), drop it in `kindle/fbink`,
+and `install.sh` carries it to `/mnt/us/dashboard/fbink`. Run that second line
+by hand once, from the device, and check the flags against `fbink -h`: they are
+the one thing here a future version could rename.
+
+**Without it nothing breaks**: `draw.sh` falls back to `eips` and writes the
+value small, centred in the very same blank.
+
+`INDOOR_TEMP_X/Y/SCALE/CHARS` in `local/env.sh` say where the value goes and how
+big it is drawn, and must match `INDOOR_SLOT_X/Y`, `INDOOR_SCALE` and
+`INDOOR_SLOT_CHARS` in `src/k4weather/model.py`, which is where the hole is
+left. `tests/test_kindle.py` fails when the two drift apart. The eips fallback
+derives its own cell coordinates from those same four numbers, so there is one
+slot to move and not two: if the value lands off its blank, `INDOOR_TEMP_X/Y`
+are the knobs — in pixels, so the correction is as fine as the error — and the
+generator has to move by the same amount, or the dash underneath will still be
+sitting where it was.
 
 Two details of the wrapper worth knowing:
 
@@ -272,9 +297,42 @@ It starts in the background, logs to `/mnt/us/dashboard/logs/dash.log`, and
 after ten seconds or so the device suspends. From then on it wakes by itself at
 :15 and :45.
 
-To start it from the menu instead of over SSH, copy `KUAL/kindle-dash` from the
-[kindle-dash repository](https://github.com/pascalw/kindle-dash/tree/master/KUAL)
-into `/mnt/us/extensions` — it is not part of the release.
+## Starting it from the Kindle, without a computer
+
+`install.sh` also puts a KUAL extension in `/mnt/us/extensions/k4weather`, so
+the panel can be brought up from the device's own menu — no cable, no SSH.
+Three entries, under **k4-weather**:
+
+| Entry | What it does |
+|---|---|
+| *Meteo: avvia il pannello* | the real start, detached (see below) |
+| *Meteo: prova (scarica e disegna)* | one download, one draw, no loop and no suspend — the reader keeps running underneath |
+| *Meteo: ferma e torna al lettore* | `stop.sh` followed by `framework start` |
+
+KUAL itself is not part of this project: it has to be installed already, from
+[its own page](https://wiki.mobileread.com/wiki/KUAL). On a Kindle 4 it is the
+KDK build, a kindlet that runs inside the framework — which is the whole reason
+the start entry is not simply a menu item pointing at `start.sh`, the way
+kindle-dash's own extension is.
+
+**Why the wrapper.** The first thing `dash.sh` does is stop the framework, and
+KUAL lives inside it. A loop launched as a child of the menu is in the
+framework's session and gets torn down with the thing it just killed. So
+`bin/start.sh` puts it in a session of its own with `setsid` first — falling
+back to `nohup` and a double fork where busybox has no `setsid` — and only then
+lets go of it. It also refuses to start a second loop, which would mean two
+processes competing for the screen and for the RTC wakeup.
+
+Everything these scripts have to say goes on the screen with `eips` as well as
+into `logs/kual.log`: a device driven from its own menu has no terminal to
+print to. The messages are in Italian, like the panel.
+
+**On the stop entry.** While the dashboard runs the framework is down, so KUAL
+is not on screen and this entry cannot be reached — the way back is a reboot
+(power button held for ~20 seconds), which comes back a reader because nothing
+starts the dashboard at boot. What the entry is for is the untidy case: a loop
+left running behind a framework that is still up. It is safe to pick when
+nothing is running.
 
 ## Stopping it and taking the Kindle back
 

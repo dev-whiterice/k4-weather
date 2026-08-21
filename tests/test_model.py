@@ -9,12 +9,17 @@ from k4weather.model import (
     DAY_BAR_WIDTH,
     EIPS_CELL_HEIGHT,
     EIPS_CELL_WIDTH,
+    FBINK_CELL_HEIGHT,
+    FBINK_CELL_WIDTH,
+    INDOOR_SCALE,
     INDOOR_SLOT_CHARS,
-    INDOOR_SLOT_COL,
-    INDOOR_SLOT_ROW,
+    INDOOR_SLOT_X,
+    INDOOR_SLOT_Y,
     MIN_DAY_BAR_WIDTH,
     STALE_AFTER,
     build_dashboard,
+    indoor_eips_cells,
+    indoor_slot,
 )
 
 
@@ -191,15 +196,33 @@ def test_no_indoor_slot_unless_the_feature_is_on(forecast, cfg):
     assert d.indoor is None
 
 
-def test_indoor_slot_is_a_whole_number_of_eips_cells(forecast, cfg):
+def test_indoor_slot_is_a_whole_number_of_fbink_cells(forecast, cfg):
     """The Kindle writes in character cells; the layout has to reserve them."""
     cfg = replace(cfg, features=replace(cfg.features, indoor_temperature=True))
     d = build_dashboard(forecast, None, cfg, now=_at_fixture_time(forecast))
 
-    assert d.indoor.x == INDOOR_SLOT_COL * EIPS_CELL_WIDTH
-    assert d.indoor.y == INDOOR_SLOT_ROW * EIPS_CELL_HEIGHT
-    assert d.indoor.width == INDOOR_SLOT_CHARS * EIPS_CELL_WIDTH
-    assert d.indoor.height == EIPS_CELL_HEIGHT
+    assert (d.indoor.x, d.indoor.y) == (INDOOR_SLOT_X, INDOOR_SLOT_Y)
+    assert d.indoor.width == INDOOR_SLOT_CHARS * FBINK_CELL_WIDTH * INDOOR_SCALE
+    assert d.indoor.height == FBINK_CELL_HEIGHT * INDOOR_SCALE
     # The whole slot has to fit on the panel, cells and all.
     assert d.indoor.x + d.indoor.width <= cfg.display.width
     assert d.indoor.y + d.indoor.height <= cfg.display.height
+
+
+def test_the_eips_fallback_stays_inside_the_same_hole():
+    """Without fbink the value is drawn smaller, never outside the blank.
+
+    The device does this arithmetic in POSIX sh, from the pixel coordinates
+    alone. Here is what it has to come out with.
+    """
+    slot = indoor_slot()
+    col, row, chars = indoor_eips_cells()
+
+    assert col * EIPS_CELL_WIDTH >= slot.x
+    assert (col + chars) * EIPS_CELL_WIDTH <= slot.x + slot.width
+    assert row * EIPS_CELL_HEIGHT >= slot.y
+    assert (row + 1) * EIPS_CELL_HEIGHT <= slot.y + slot.height
+    # Centred rather than merely inside: half a cell of drift shows next to a
+    # rule 158 px tall.
+    top = row * EIPS_CELL_HEIGHT
+    assert top - slot.y == slot.y + slot.height - (top + EIPS_CELL_HEIGHT)

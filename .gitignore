@@ -5,3 +5,6 @@ __pycache__/
 out/
 .DS_Store
 build/
+
+# The fbink binary is downloaded, not committed: it is an ARM build, not ours.
+kindle/fbink

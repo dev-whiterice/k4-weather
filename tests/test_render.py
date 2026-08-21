@@ -10,6 +10,7 @@ from k4weather import model
 from k4weather.model import build_dashboard
 from k4weather.postprocess import to_eink_png, validate
 from k4weather.render import build_html, html_to_png
+from k4weather.wmo import WMO_CODES
 
 
 @pytest.fixture
@@ -52,7 +53,7 @@ def test_jinja_comments_do_not_reach_the_output(html):
 
 
 @pytest.mark.slow
-def test_the_indoor_slot_lands_on_the_eips_character_grid(forecast, cfg):
+def test_the_indoor_slot_lands_where_the_kindle_writes(forecast, cfg):
     """The blank left for the Kindle has to be where the Kindle writes.
 
     Everything about that position is implicit in the CSS — the padding of the
@@ -80,12 +81,51 @@ def test_the_indoor_slot_lands_on_the_eips_character_grid(forecast, cfg):
         finally:
             browser.close()
 
-    assert box == [
-        model.INDOOR_SLOT_COL * model.EIPS_CELL_WIDTH,
-        model.INDOOR_SLOT_ROW * model.EIPS_CELL_HEIGHT,
-        model.INDOOR_SLOT_CHARS * model.EIPS_CELL_WIDTH,
-        model.EIPS_CELL_HEIGHT,
-    ]
+    slot = model.indoor_slot()
+    assert box == [slot.x, slot.y, slot.width, slot.height]
+
+
+@pytest.mark.slow
+def test_the_longest_condition_does_not_push_the_band_off_the_panel(forecast, cfg):
+    """The widest text on the page must not be able to widen the page.
+
+    `body` is a grid, and an implicit column sizes itself to its widest content:
+    one long weather description would then stretch every section at once and
+    carry the right-hand side of all of them past the panel — starting with the
+    indoor temperature, which is positioned in absolute page pixels and would be
+    the one thing that did not move with it.
+    """
+    from playwright.sync_api import sync_playwright
+
+    cfg = replace(cfg, features=replace(cfg.features, indoor_temperature=True))
+    now = datetime.fromisoformat(forecast["current"]["time"])
+    d = build_dashboard(forecast, None, cfg, now=now)
+    d.condition = max((c[0] for c in WMO_CODES.values()), key=len)
+    # Negative and three digits wide, which is as much room as the figure ever
+    # asks for.
+    d.temperature = "-19"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(
+                viewport={"width": cfg.display.width, "height": cfg.display.height}
+            ).new_page()
+            page.set_content(build_html(d, cfg), wait_until="load")
+            page.evaluate("() => document.fonts.ready")
+            measured = page.evaluate(
+                """() => ({
+                    page: document.body.scrollWidth,
+                    range: document.querySelector('.now-range').getBoundingClientRect().right,
+                    rule: document.querySelector('.indoor-rule').getBoundingClientRect().x,
+                })"""
+            )
+        finally:
+            browser.close()
+
+    assert measured["page"] == cfg.display.width
+    # And the outdoor half stays on its own side of the dividing rule.
+    assert measured["range"] <= measured["rule"]
 
 
 @pytest.mark.slow

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- KUAL extension descriptor. The id has to match the directory name under
+     /mnt/us/extensions, or KUAL skips the extension without saying why. -->
+<extension>
+	<information>
+		<name>k4-weather</name>
+		<version>1.0</version>
+		<author>dev-whiterice</author>
+		<id>k4weather</id>
+	</information>
+	<menus>
+		<menu type="json" dynamic="true">menu.json</menu>
+	</menus>
+</extension>

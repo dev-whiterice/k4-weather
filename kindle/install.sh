@@ -13,6 +13,7 @@ set -euo pipefail
 
 KINDLE="${1:-root@192.168.15.244}"
 REMOTE_DIR="/mnt/us/dashboard"
+EXT_DIR="/mnt/us/extensions/k4weather"
 
 # Paths relative to the script, not to the directory you launched it from.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,6 +48,21 @@ cp "$HERE/local/draw.sh" "$BUILD/local/draw.sh"
 url="$(grep -m1 '^DASH_URL=' "$BUILD/local/fetch-dashboard.sh" | cut -d'"' -f2)"
 echo "    image source: $url"
 
+# fbink is what draws the indoor temperature at a size worth reading, and it is
+# neither on the device nor in this repository: a static ARM binary you download
+# once and drop in kindle/fbink. Optional on purpose — without it the panel
+# works exactly as before, with the smaller number eips draws.
+FBINK=""
+if [ -f "$HERE/fbink" ]; then
+  cp "$HERE/fbink" "$BUILD/fbink"
+  chmod +x "$BUILD/fbink"
+  FBINK="$REMOTE_DIR/fbink"
+  echo "    the value is drawn by fbink ($(wc -c <"$HERE/fbink" | tr -d ' ') bytes)"
+else
+  echo "    the value is drawn by eips, small: kindle/fbink is not there."
+  echo "    Legacy build for the Kindle 4, from github.com/NiLuJe/FBInk/releases."
+fi
+
 # The indoor temperature exists only on the device, and kindle-dash has no hook
 # that runs once the screen is up: it calls /usr/sbin/eips inline. Rewriting
 # those call sites to our wrapper is the smallest change that creates one — it
@@ -67,7 +83,9 @@ if [ "$code" = "200" ]; then
   echo "    HTTP 200, the image is there"
 else
   echo "    WARNING: HTTP ${code:-no response}"
-  echo "    The 'dashboard' workflow has not published to the output branch yet."
+  echo "    On 404, either Pages is off for this repository (Settings > Pages:"
+  echo "    branch 'output', folder /) or the 'dashboard' workflow has never"
+  echo "    published to the output branch. See docs/setup.md step 3."
   echo "    Installation continues: the Kindle will work as soon as the image exists."
 fi
 
@@ -126,8 +144,32 @@ step "Restoring the executable bits"
 # On /mnt/us (a FAT filesystem) permissions may not be stored: if the chmod
 # does not stick it is not a problem, the partition is mounted executable.
 ssh "$KINDLE" "chmod +x $REMOTE_DIR/*.sh $REMOTE_DIR/local/*.sh \
-  $REMOTE_DIR/xh $REMOTE_DIR/next-wakeup" 2>/dev/null \
+  $REMOTE_DIR/xh $REMOTE_DIR/next-wakeup $FBINK" 2>/dev/null \
   || echo "    chmod not applicable (FAT): normal, carrying on"
+
+step "Installing the KUAL extension in $EXT_DIR"
+# So the panel can be started from the device's own menu instead of over SSH.
+#
+# Asked before the copy, which creates /mnt/us/extensions on its own and would
+# make the question answer itself. KUAL is not part of this project and cannot
+# be installed from here, so a device without it is worth a word now rather
+# than a menu entry looked for in vain later.
+kual="$(ssh "$KINDLE" "ls -d /mnt/us/extensions/*/ 2>/dev/null | wc -l" 2>/dev/null | tr -d ' ')"
+
+# Copied even where KUAL is missing: five small files, already in place if it
+# ever arrives.
+COPYFILE_DISABLE=1 tar c --format=ustar -C "$HERE/extensions/k4weather" . \
+  | ssh "$KINDLE" "mkdir -p '$EXT_DIR' && cd '$EXT_DIR' && tar x"
+ssh "$KINDLE" "find '$EXT_DIR' -name '._*' | xargs rm -f" 2>/dev/null || true
+ssh "$KINDLE" "chmod +x $EXT_DIR/bin/*.sh" 2>/dev/null \
+  || echo "    chmod not applicable (FAT): normal, carrying on"
+
+if [ "${kual:-0}" -gt 0 ] 2>/dev/null; then
+  echo "    installed, alongside $kual other extension(s)"
+else
+  echo "    installed, but /mnt/us/extensions held no extension: KUAL is"
+  echo "    probably not on this device. The entries appear once it is."
+fi
 
 cat <<EOF
 
@@ -145,7 +187,15 @@ Once that works, the real start (background, then the Kindle suspends):
 
     ssh $KINDLE $REMOTE_DIR/start.sh
 
+or, with no computer at all, from the device: KUAL > k4-weather >
+"Meteo: avvia il pannello". The same menu has a one-shot download-and-draw
+that leaves the reader running, which is the quicker way to check this
+installation without SSH.
+
 To get your Kindle back as an ebook reader:
 
     ssh $KINDLE '$REMOTE_DIR/stop.sh; /etc/init.d/framework start'
+
+Or hold the power button for ~20s: nothing starts the dashboard at boot, so a
+reboot always comes back a reader.
 EOF

@@ -41,6 +41,11 @@ body {
   /* header, current, metrics, hourly, daily (elastic), footer */
   display: grid;
   grid-template-rows: 52px 190px 58px 162px 1fr 48px;
+  /* One column, and exactly as wide as the panel. Left implicit it would be an
+     `auto` track, which sizes to the widest content on the page: a long weather
+     description would then widen every section at once and push the right-hand
+     side of all of them off the screen, indoor temperature included. */
+  grid-template-columns: 100%;
 
   /* The origin the indoor slot is positioned from: the coordinates model.py
      computes are pixels of the final PNG, and this makes them mean that. No
@@ -169,63 +174,75 @@ svg {
 
 /* ----------------------------------------------------- indoor temperature */
 
-/* The room's temperature is not rendered here: the Kindle writes it in the
-   bitmap font of `eips`, which puts text on a fixed grid of 12x20 px cells.
-   This box is the hole left for it, and its position comes straight from
+/* The room's temperature is not rendered here: the Kindle writes it on top of
+   the image, in the bitmap font of `fbink` — 24x48 px per character, three of
+   them — or, where fbink is not installed, in the smaller one of `eips`. This
+   box is the hole left for it, and its position comes straight from
    INDOOR_SLOT_* in model.py, in pixels of the final PNG — hence the absolute
    placement against `body`. Everything else in this block hangs off it, so
    there is exactly one number to get right.
 
    The room is a different kind of reading from the forecast, and it is drawn
    by a different machine, in a different typeface: rather than hide that, the
-   layout gives it its own column, its own label and a rule of its own. */
+   layout gives it its own column, its own label and a rule of its own. Half
+   the height of the outdoor temperature, twice the height of the figures that
+   qualify it: read from a doorway, it is the second thing on the page. */
 .current.split {
   /* Keeps the flex row clear of the rule, at the same 24px the readout keeps
      on the other side of it. */
-  padding-right: 145px;
+  padding-right: 156px;
 }
 
 .indoor-slot {
+  /* Width reserved for the degree sign, which hangs off the right edge of the
+     hole: declared once, because the label is flush with its far side. */
+  --deg: 14px;
+
   position: absolute;
   display: flex;
   align-items: center;
   /* Right-aligned against the degree sign: the Kindle pads the value with
      blanks, so two and three digits both end in the same place. */
   justify-content: flex-end;
-  font-size: 15px;
+  /* Only the dash is drawn from here, and it stands in for digits 48px tall. */
+  font-size: 34px;
   font-weight: 600;
+  line-height: 1;
   color: var(--ink);
 }
 
 /* The divider between the two halves, 24px to the left of the slot. It spans
-   the content box of the band — 158px starting 72px above the slot — so the
+   the content box of the band — 158px starting 58px above the slot — so the
    split reads as architecture rather than as an afterthought. */
 .indoor-rule {
   position: absolute;
   right: calc(100% + 24px);
-  top: -72px;
+  top: -58px;
   width: 1px;
   height: 158px;
   background: var(--rule);
 }
 
+/* Flush with the right margin of the page, like the label of every figure on
+   the other side of the rule — and like the reading itself, which the Kindle
+   right-aligns inside the hole. */
 .indoor-label {
   position: absolute;
-  left: 0;
-  bottom: calc(100% + 7px);
+  right: calc(-1 * var(--deg));
+  bottom: calc(100% + 9px);
 }
 
-/* Sized against the bitmap digits it sits next to, not against the rest of the
-   page: an eips cell is 20px tall and its glyphs fill most of it. */
+/* Sized and placed against the bitmap digits it sits next to, not against the
+   rest of the page: it hangs at the top of the cell, where a degree sign
+   belongs, rather than in the middle of a box 48px tall. */
 .indoor-deg {
   position: absolute;
   left: 100%;
-  top: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  font-size: 17px;
+  top: 5px;
+  width: var(--deg);
+  font-size: 30px;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: -0.03em;
 }
 

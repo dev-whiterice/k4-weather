@@ -26,7 +26,7 @@ Open-Meteo  ─►  data model                         wakes from RTC
                     ▼                              eips -g dashboard.png
         8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
-                    ▼                              eips 42 7 "  21"
+                    ▼                              fbink -S 3 … " 21"
         branch `output` ─► GitHub Pages ───────────────► │
                                                          ▼
                                                    suspend to RAM
@@ -83,6 +83,7 @@ and tests are reproducible and never touch the network.
 | `src/k4weather/postprocess.py` | conversion and validation for `eips` |
 | `src/k4weather/templates/` | HTML, CSS, SVG icons, Inter fonts |
 | `kindle/local/` | what runs on the device: download, sensor, drawing |
+| `kindle/extensions/` | KUAL menu, to start the panel from the Kindle itself |
 | `kindle/install.sh` | installs the runtime on the Kindle, configured |
 
 The API payloads are treated as untrusted: every series is read through a
@@ -95,15 +96,13 @@ elsewhere:
 - the width of the min–max track in `style.css` (`.day` grid) must match
   `DAY_BAR_WIDTH` in `model.py`, because the bar inside the track is positioned
   in absolute pixels computed there;
-- the blank left for the indoor temperature must fall on whole cells of the
-  `eips` character grid — 12×20 px — at the coordinates the Kindle writes to.
-  `INDOOR_SLOT_*` in `model.py` and `INDOOR_TEMP_COL/ROW/CHARS` in
-  `kindle/local/env.sh` say the same thing twice, once per machine;
-  `tests/test_kindle.py` compares them. The slot is the only element on the
-  page positioned in absolute page pixels, and everything drawn around it —
-  label, degree sign, dividing rule — hangs off that one rectangle, so a
-  browser measurement in `tests/test_render.py` is enough to know the whole
-  block is where it should be.
+- the blank left for the indoor temperature must match the character grid of
+  whatever draws it — 24×48 px per character for `fbink` at scale 3, 12×20 for
+  the `eips` fallback. `INDOOR_SLOT_*` in `model.py` and `INDOOR_TEMP_*` in
+  `kindle/local/env.sh` say it once per machine and `tests/test_kindle.py`
+  compares them. It is the only element positioned in absolute page pixels, and
+  label, degree sign and dividing rule all hang off that one rectangle, so the
+  browser measurement in `tests/test_render.py` covers the whole block.
 
 ## Kindle 4 constraints that explain the choices
 
@@ -113,6 +112,7 @@ elsewhere:
 | `eips` skews RGB PNGs | `postprocess.py` forces 8-bit grayscale with no alpha, and `make inspect` verifies it |
 | Thin strokes and light grays vanish at 167 ppi | Solid-shape icons, hairlines never below 1 px, text in full black |
 | Stock curl/wget do not speak modern TLS | The download uses `xh`, the static client bundled with kindle-dash |
+| `eips` has one font size, 12×20 px | The indoor temperature is drawn by `fbink`, which scales its font; without it the value still appears, small |
 | The GitHub Actions cron runs 5-20 minutes late | The Kindle wakes 15 minutes offset and the image always carries its generation time |
 
 ### Icons
@@ -137,32 +137,30 @@ illegible, and it is worth finding out immediately.
 
 ## Putting it into service
 
-Step-by-step procedure in [`docs/setup.md`](docs/setup.md). In short:
+Step by step in [`docs/setup.md`](docs/setup.md); the shape of it:
 
 1. **Public repository** — the Kindle cannot authenticate, so the source has to
-   be readable without a token. On top of that, 48 runs a day cost about 3,000
-   Actions minutes a month against the 2,000 included in the free plan for
-   private repositories; on public ones Actions is unlimited.
+   be readable without a token, and 48 runs a day would cost some 3,000 Actions
+   minutes a month against the 2,000 the free plan includes for private ones.
 2. **Push to `main`** — the workflow starts by itself and creates the `output`
-   branch.
+   branch, which GitHub Pages serves.
 3. **`PUBLISH_TOKEN` secret** (recommended) — a fine-grained PAT with
-   `contents: write`, to stop GitHub disabling the scheduler after 60 days of
+   `contents: write`, or GitHub disables the scheduler after 60 days of
    inactivity: commits made with the automatic token do not count as activity.
-4. **Kindle** — see [`kindle/README.md`](kindle/README.md).
+4. **Kindle** — [`kindle/README.md`](kindle/README.md).
 
-The Kindle reads from
-`raw.githubusercontent.com/dev-whiterice/k4-weather/output/dashboard.png`, the
-same source used by the kindle-dash example: a path already proven on the
-device.
-
-The workflow also supports publishing to a different repository through the
-`PUBLISH_REPO` variable, in case the code ever goes private again.
+The Kindle reads `dev-whiterice.github.io/k4-weather/dashboard.png` from Pages
+and not from `raw.githubusercontent.com`, the source the kindle-dash example
+uses: raw's anti-scraping limit follows the IP address and answers 429 once it
+trips, taking the panel down with it. The workflow can publish to a different
+repository too, through the `PUBLISH_REPO` variable, in case the code ever goes
+private again.
 
 ## Roadmap
 
 - [x] Phase 1 — fixed location in `config.yaml`
-- [x] Indoor temperature from the Kindle's own sensor, overlaid with `eips`
-      client side — see [`kindle/README.md`](kindle/README.md)
+- [x] Indoor temperature from the Kindle's own sensor, overlaid client side
+      with `fbink` — see [`kindle/README.md`](kindle/README.md)
 - [ ] Phase 2 — dynamic location (several locations, search by name through
       Open-Meteo geocoding, selection from a secret)
 - [ ] Kindle battery level on screen, through the same overlay

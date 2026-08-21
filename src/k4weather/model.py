@@ -37,22 +37,39 @@ STALE_AFTER = timedelta(minutes=90)
 
 # The indoor temperature is the one number this program cannot render: the
 # sensor is on the Kindle and the image is built in the cloud. The device draws
-# it itself with `eips`, which writes text on a fixed character grid — cells of
-# 12x20 px, so 50 columns by 40 rows on this panel — and all the layout can do
-# is leave a hole of exactly the right size in exactly the right place.
+# it on top of the image, and all the layout can do is leave a hole of exactly
+# the right size in exactly the right place.
+#
+# Two programs on the device can fill that hole, and both write text on a fixed
+# character grid. `fbink` scales its 8x16 px bitmap font by a whole number —
+# cells of 24x48 px at INDOOR_SCALE 3 — and is what makes the reading legible
+# from across the room. `eips`, the stock tool, has exactly one size, cells of
+# 12x20 px, and is the fallback where fbink is not installed. The hole is sized
+# for fbink; eips centres its smaller digits inside the same rectangle, so the
+# two sides have one box to agree on rather than two.
+FBINK_CELL_WIDTH = 8
+FBINK_CELL_HEIGHT = 16
 EIPS_CELL_WIDTH = 12
 EIPS_CELL_HEIGHT = 20
-# Position and width of that hole, in cells: the right-hand column of the
-# current-conditions block, level with the figures that qualify the outdoor
-# temperature. These three numbers must match INDOOR_TEMP_COL/ROW/CHARS in
+
+# How much fbink enlarges its font. At 3 a character is 24x48 px: half the
+# height of the outdoor temperature beside it, which is the hierarchy the two
+# readings deserve — the room is worth reading, but it is not the forecast.
+INDOOR_SCALE = 3
+# Three characters is the widest reading the device is allowed to produce
+# (INDOOR_TEMP_MIN is -10 °C), and the value is right-aligned inside them.
+INDOOR_SLOT_CHARS = 3
+# Top-left corner of the hole, in pixels of the final PNG: hard against the
+# right margin of the page, vertically centred on the current-conditions band.
+# Both are chosen against the eips grid too, so that the fallback lands square
+# inside the same box: x on a multiple of 12, and y such that y + (height - 20)
+# / 2 comes out a multiple of 20.
+#
+# These four numbers must match INDOOR_TEMP_X/Y/SCALE/CHARS in
 # `kindle/local/env.sh`: the Kindle writes at those coordinates and nothing here
 # can tell it otherwise. `tests/test_kindle.py` keeps the two sides in step.
-INDOOR_SLOT_COL = 42
-INDOOR_SLOT_ROW = 7
-# Four cells for at most three characters: the Kindle right-aligns the value
-# and pads it with blanks, and that leading blank is what stops `eips` from
-# reading a temperature below zero as an option of its own.
-INDOOR_SLOT_CHARS = 4
+INDOOR_SLOT_X = 492
+INDOOR_SLOT_Y = 126
 
 # On-screen copy is Italian on purpose: the panel hangs on an Italian wall.
 # Only code comments and documentation are in English.
@@ -147,7 +164,7 @@ class DayRow:
 
 
 @dataclass
-class EipsSlot:
+class IndoorSlot:
     """A rectangle the layout leaves blank for text the Kindle draws itself.
 
     In pixels of the final PNG, so the template can place it directly.
@@ -199,7 +216,7 @@ class Dashboard:
     stale: bool = False
     # None when the indoor temperature is off: the footer then has no slot for
     # it, rather than an empty one.
-    indoor: EipsSlot | None = None
+    indoor: IndoorSlot | None = None
 
 
 def _parse_local(value: str) -> datetime:
@@ -389,14 +406,33 @@ def _build_metrics(
     return metrics
 
 
-def _indoor_slot() -> EipsSlot:
+def indoor_slot() -> IndoorSlot:
     """The blank the Kindle writes the indoor temperature into, in pixels."""
-    return EipsSlot(
-        x=INDOOR_SLOT_COL * EIPS_CELL_WIDTH,
-        y=INDOOR_SLOT_ROW * EIPS_CELL_HEIGHT,
-        width=INDOOR_SLOT_CHARS * EIPS_CELL_WIDTH,
-        height=EIPS_CELL_HEIGHT,
+    return IndoorSlot(
+        x=INDOOR_SLOT_X,
+        y=INDOOR_SLOT_Y,
+        width=INDOOR_SLOT_CHARS * FBINK_CELL_WIDTH * INDOOR_SCALE,
+        height=FBINK_CELL_HEIGHT * INDOOR_SCALE,
     )
+
+
+def indoor_eips_cells() -> tuple[int, int, int]:
+    """The same blank in eips cells: column, row, and width in characters.
+
+    `local/draw.sh` derives these on the device, from the pixel coordinates and
+    nothing else, so that moving the slot means moving one pair of numbers. This
+    is the arithmetic it has to agree with, and `tests/test_kindle.py` checks it
+    does. The value ends up right-aligned and vertically centred in the box the
+    layout left for fbink — smaller than the hole, never larger than it.
+    """
+    slot = indoor_slot()
+    chars = slot.width // EIPS_CELL_WIDTH
+    col = (slot.x + slot.width - chars * EIPS_CELL_WIDTH) // EIPS_CELL_WIDTH
+    # Rounded to the nearest row rather than truncated: half a cell of drift is
+    # visible next to a rule 158 px tall.
+    top = slot.y + (slot.height - EIPS_CELL_HEIGHT) // 2
+    row = (top + EIPS_CELL_HEIGHT // 2) // EIPS_CELL_HEIGHT
+    return col, row, chars
 
 
 def build_dashboard(
@@ -474,5 +510,5 @@ def build_dashboard(
         moon_name=moon_name,
         moon_illumination=moon_illum,
         stale=stale,
-        indoor=_indoor_slot() if cfg.features.indoor_temperature else None,
+        indoor=indoor_slot() if cfg.features.indoor_temperature else None,
     )

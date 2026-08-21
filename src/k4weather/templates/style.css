@@ -175,7 +175,7 @@ svg {
 /* ----------------------------------------------------- indoor temperature */
 
 /* The room's temperature is not rendered here: the Kindle writes it on top of
-   the image, in the bitmap font of `fbink` — 24x48 px per character, three of
+   the image, in the bitmap font of `fbink` — 32x64 px per character, three of
    them — or, where fbink is not installed, in the smaller one of `eips`. This
    box is the hole left for it, and its position comes straight from
    INDOOR_SLOT_* in model.py, in pixels of the final PNG — hence the absolute
@@ -184,13 +184,17 @@ svg {
 
    The room is a different kind of reading from the forecast, and it is drawn
    by a different machine, in a different typeface: rather than hide that, the
-   layout gives it its own column, its own label and a rule of its own. Half
-   the height of the outdoor temperature, twice the height of the figures that
-   qualify it: read from a doorway, it is the second thing on the page. */
+   layout gives it its own column, its own label and a rule of its own. Its
+   digits stand about halfway between the figures that qualify the forecast and
+   the forecast itself: read from a doorway, it is the second thing on the
+   page. */
 .current.split {
   /* Keeps the flex row clear of the rule, at the same 24px the readout keeps
-     on the other side of it. */
-  padding-right: 156px;
+     on the other side of it: 648 - INDOOR_SLOT_X, since the rule hangs 25px
+     off the left edge of the slot and the page is 600 wide. Widening the slot
+     takes this space from the left-hand column, which is why the two numbers
+     move together. */
+  padding-right: 180px;
 }
 
 .indoor-slot {
@@ -205,7 +209,7 @@ svg {
      blanks, so two and three digits both end in the same place. */
   justify-content: flex-end;
   /* Only the dash is drawn from here, and it stands in for digits 48px tall. */
-  font-size: 34px;
+  font-size: 45px;
   font-weight: 600;
   line-height: 1;
   color: var(--ink);
@@ -217,7 +221,9 @@ svg {
 .indoor-rule {
   position: absolute;
   right: calc(100% + 24px);
-  top: -58px;
+  /* 68px is the top of the band's content box; the slot starts at
+     INDOOR_SLOT_Y, so this offset is 68 - that. */
+  top: -50px;
   width: 1px;
   height: 158px;
   background: var(--rule);
@@ -238,9 +244,9 @@ svg {
 .indoor-deg {
   position: absolute;
   left: 100%;
-  top: 5px;
+  top: 7px;
   width: var(--deg);
-  font-size: 30px;
+  font-size: 40px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.03em;

@@ -13,7 +13,9 @@ from the environment: that is what makes them runnable here.
 """
 
 import json
+import os
 import re
+import signal
 import struct
 import subprocess
 import time
@@ -195,13 +197,13 @@ def test_fbink_draws_the_value_right_aligned_in_its_slot(eips, fbink, reading, u
 @pytest.mark.parametrize(
     "reading,unit,drawn",
     [
-        ("73 Fahrenheit", "F", "    23"),
-        ("8", "C", "     8"),
+        ("73 Fahrenheit", "F", "      23"),
+        ("8", "C", "       8"),
         # Without that leading blank eips would read a temperature below zero as
         # one of its own options, which is why the value is padded to the full
         # width of the hole and not merely aligned in it.
-        ("-5", "C", "    -5"),
-        ("14 Fahrenheit", "F", "   -10"),
+        ("-5", "C", "      -5"),
+        ("14 Fahrenheit", "F", "     -10"),
     ],
 )
 def test_eips_draws_the_value_in_the_same_hole_when_fbink_is_missing(
@@ -255,18 +257,57 @@ def test_the_extension_id_matches_its_directory():
     assert root.findtext("information/id") == EXTENSION.name
 
 
-def test_every_menu_entry_points_at_a_script_that_is_there():
+def _menu_actions() -> list[tuple[str, str]]:
+    """Every menu action, split into the interpreter and the script it runs."""
     menu = json.loads((EXTENSION / "menu.json").read_text(encoding="utf-8"))
     actions = [item["action"] for item in menu["items"]]
     assert actions, "the menu has no entries"
+    return [tuple(action.split()) for action in actions]
 
-    for action in actions:
-        script = EXTENSION / action
-        assert script.is_file(), f"{action} is not in the extension"
-        # /mnt/us is FAT and may not keep the bit, which is why install.sh
-        # chmods on arrival — but a file that is not executable here would not
-        # be worth chmoding there.
-        assert script.stat().st_mode & 0o111, f"{action} is not executable"
+
+def _install_ext_dir() -> str:
+    """The directory install.sh copies the extension into, on the device."""
+    text = (KINDLE.parent / "install.sh").read_text(encoding="utf-8")
+    match = re.search(r'^EXT_DIR="([^"]+)"$', text, re.MULTILINE)
+    assert match, "install.sh no longer declares EXT_DIR"
+    return match.group(1)
+
+
+def test_every_menu_entry_names_its_interpreter():
+    """The action is a shell command, and it has to name the shell.
+
+    /mnt/us is FAT: the execute bit there is synthesised from the mount options
+    rather than stored per file, so calling a script directly is a bet on how
+    the partition happens to be mounted. Losing that bet fails the way every
+    KUAL failure does — the menu prints the action, exits, and the error goes
+    only to /var/tmp/KUAL.log. Naming the interpreter takes the bet off the
+    table.
+    """
+    for interpreter, script in _menu_actions():
+        assert interpreter == "/bin/sh", f"{script} is not launched through /bin/sh"
+
+
+def test_every_menu_entry_points_at_a_script_that_is_there():
+    """And points at it by the absolute path it will have on the device.
+
+    A relative action rides on KUAL setting the working directory to the
+    extension folder, which is a promise made by a Java kindlet on a 2011
+    device and not one worth depending on: kindle-dash's own KUAL extension
+    uses an absolute path too. That makes menu.json and install.sh agree on
+    where the extension lives, so this checks they still do.
+    """
+    ext_dir = _install_ext_dir()
+
+    for _, script in _menu_actions():
+        assert script.startswith(f"{ext_dir}/"), (
+            f"{script} is not under {ext_dir}, where install.sh puts the extension"
+        )
+        here = EXTENSION / script[len(ext_dir) + 1:]
+        assert here.is_file(), f"{script} is not in the extension"
+        # No longer what makes the entry work — the interpreter is named above
+        # — but the scripts are run by hand over SSH too, and install.sh chmods
+        # them on arrival. A file not executable here is not worth chmoding.
+        assert here.stat().st_mode & 0o111, f"{script} is not executable"
 
 
 @pytest.mark.parametrize(
@@ -704,3 +745,44 @@ def test_the_state_follows_the_image_that_was_actually_handed_over(
     _fetch(device, origin, tmp_path / "dash.png", fail="dashboard-verona.png")
 
     assert device.stored() == "caoria"
+
+
+def test_ctrl_c_during_the_window_still_stops_the_panel(device, tmp_path):
+    """The ten-second window is the documented way to interrupt the loop.
+
+    It used to be a plain `sleep`, which Ctrl-C killed along with the shell
+    waiting on it. Now it is a script with traps, and a trap that cleans up and
+    *returns* swallows the signal: the window would run to its end and the loop
+    around it would carry on, because a shell only aborts when a child of it
+    dies of a signal. Re-raising is what keeps the old behaviour.
+    """
+    loop = tmp_path / "loop.sh"
+    loop.write_text(f'#!/bin/sh\nsh {INTERACT} 30\necho "STILL RUNNING"\n', encoding="utf-8")
+
+    running = subprocess.Popen(
+        ["sh", str(loop)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        # Its own process group, so the signal below reaches the whole of it —
+        # which is what a terminal does on Ctrl-C.
+        start_new_session=True,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "KEY_DEVICE": "/dev/null",
+            "CAPTURE": str(tmp_path / "capture.bin"),
+            "INTERACT_FLASH": "false",
+            **device.env,
+        },
+    )
+    time.sleep(1.5)
+    os.killpg(os.getpgid(running.pid), signal.SIGINT)
+
+    try:
+        running.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(running.pid), signal.SIGKILL)
+        running.wait()
+        pytest.fail("the window ignored Ctrl-C and ran to the end of its 30 seconds")
+
+    assert "STILL RUNNING" not in running.stdout.read()

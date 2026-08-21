@@ -28,7 +28,7 @@ Open-Meteo  ─►  data model                               │
                     ▼                              eips -g the current one
         8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
-                    ▼                              fbink -S 3 … " 21"
+                    ▼                              fbink -S 4 … " 21"
      dashboard-<id>.png + locations.json                 │
                     │                                    ▼
         branch `output` ─► GitHub Pages ───────────────► suspend to RAM
@@ -133,7 +133,7 @@ elsewhere:
   `DAY_BAR_WIDTH` in `model.py`, because the bar inside the track is positioned
   in absolute pixels computed there;
 - the blank left for the indoor temperature must match the character grid of
-  whatever draws it — 24×48 px per character for `fbink` at scale 3, 12×20 for
+  whatever draws it — 32×64 px per character for `fbink` at scale 4, 12×20 for
   the `eips` fallback. `INDOOR_SLOT_*` in `model.py` and `INDOOR_TEMP_*` in
   `kindle/local/env.sh` say it once per machine and `tests/test_kindle.py`
   compares them. It is the only element positioned in absolute page pixels, and

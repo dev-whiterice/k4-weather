@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 # Stops the dashboard loop and brings the ebook reader back. Goes to
 # /mnt/us/extensions/k4weather/bin/stop.sh on the Kindle.
 #
@@ -10,17 +10,19 @@
 # or after `bin/test-draw.sh` was interrupted. It is safe to pick when nothing
 # is running.
 
-DASH_DIR=/mnt/us/dashboard
-LOG_DIR="$DASH_DIR/logs"
-LOG="$LOG_DIR/kual.log"
-EIPS=/usr/sbin/eips
+EXT_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) || EXT_DIR=/mnt/us/extensions/k4weather
+DASH_DIR=${DASH_DIR:-/mnt/us/dashboard}
+EIPS=${EIPS:-/usr/sbin/eips}
+LOG=${KUAL_LOG:-$EXT_DIR/kual.log}
 
-mkdir -p "$LOG_DIR"
-log() { echo "$(date) k4weather/kual stop: $*" >>"$LOG"; }
+log() { echo "$(date) k4weather/kual stop: $*" >>"$LOG" 2>/dev/null; }
 
-if [ -x "$DASH_DIR/stop.sh" ]; then
-  "$DASH_DIR/stop.sh" >>"$LOG" 2>&1
+# -f rather than -x, and `sh` rather than a direct call: on FAT the execute bit
+# is a property of the mount, not of the file. See bin/start.sh.
+if [ -f "$DASH_DIR/stop.sh" ]; then
+  sh "$DASH_DIR/stop.sh" >>"$LOG" 2>&1
 else
+  log "no $DASH_DIR/stop.sh, killing dash.sh directly"
   pkill -f dash.sh >>"$LOG" 2>&1
 fi
 
@@ -33,5 +35,5 @@ sleep 2
 /etc/init.d/framework start >>"$LOG" 2>&1
 
 log "stopped, framework restarted"
-"$EIPS" 1 1 "k4-weather: fermato, lettore riavviato"
+"$EIPS" 1 1 "k4-weather: fermato, lettore riavviato" 2>/dev/null
 exit 0

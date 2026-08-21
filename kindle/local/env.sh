@@ -94,17 +94,17 @@ export INDOOR_TEMP_MAX=${INDOOR_TEMP_MAX:-50}
 # What draws the number. `eips` has exactly one font size, 12x20 px per
 # character, which is too small to read a room temperature from a doorway:
 # fbink draws the same string in the same place with its bitmap font enlarged
-# INDOOR_TEMP_SCALE times, 24x48 px per character at 3. It is a static binary
+# INDOOR_TEMP_SCALE times, 32x64 px per character at 4. It is a static binary
 # that is not part of the device — put it in /mnt/us/dashboard/fbink and it is
 # used, leave it out and local/draw.sh falls back to eips. See kindle/README.md.
 export INDOOR_TEMP_FBINK=${INDOOR_TEMP_FBINK:-/mnt/us/dashboard/fbink}
-export INDOOR_TEMP_SCALE=${INDOOR_TEMP_SCALE:-3}
+export INDOOR_TEMP_SCALE=${INDOOR_TEMP_SCALE:-4}
 
 # Where it goes: the top left corner of the blank, in pixels of the image, and
 # how many characters wide that blank is (three, for readings down to -10).
 # Must match INDOOR_SLOT_X/Y, INDOOR_SCALE and INDOOR_SLOT_CHARS in
 # src/k4weather/model.py, which is where the layout leaves the hole. The eips
 # fallback derives its own cell coordinates from these four numbers.
-export INDOOR_TEMP_X=${INDOOR_TEMP_X:-492}
-export INDOOR_TEMP_Y=${INDOOR_TEMP_Y:-126}
+export INDOOR_TEMP_X=${INDOOR_TEMP_X:-468}
+export INDOOR_TEMP_Y=${INDOOR_TEMP_Y:-118}
 export INDOOR_TEMP_CHARS=${INDOOR_TEMP_CHARS:-3}

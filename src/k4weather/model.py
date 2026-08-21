@@ -42,7 +42,7 @@ STALE_AFTER = timedelta(minutes=90)
 #
 # Two programs on the device can fill that hole, and both write text on a fixed
 # character grid. `fbink` scales its 8x16 px bitmap font by a whole number —
-# cells of 24x48 px at INDOOR_SCALE 3 — and is what makes the reading legible
+# cells of 32x64 px at INDOOR_SCALE 4 — and is what makes the reading legible
 # from across the room. `eips`, the stock tool, has exactly one size, cells of
 # 12x20 px, and is the fallback where fbink is not installed. The hole is sized
 # for fbink; eips centres its smaller digits inside the same rectangle, so the
@@ -52,10 +52,17 @@ FBINK_CELL_HEIGHT = 16
 EIPS_CELL_WIDTH = 12
 EIPS_CELL_HEIGHT = 20
 
-# How much fbink enlarges its font. At 3 a character is 24x48 px: half the
-# height of the outdoor temperature beside it, which is the hierarchy the two
-# readings deserve — the room is worth reading, but it is not the forecast.
-INDOOR_SCALE = 3
+# How much fbink enlarges its font. At 4 a character is 32x64 px, and the digits
+# inside it stand about 48 px tall: between the figures that qualify the
+# forecast (26 px of type on the other side of the rule) and the forecast itself
+# (96 px), which is the hierarchy the two readings deserve — the room is the
+# second thing you read from a doorway, not the first and not an afterthought.
+# A bitmap face also reads smaller than it measures, which is why 3 looked
+# slighter than the arithmetic said it would.
+#
+# Only whole numbers are available: fbink scales by integers, so this is a
+# choice between 24x48 and 32x64 px and not a dial.
+INDOOR_SCALE = 4
 # Three characters is the widest reading the device is allowed to produce
 # (INDOOR_TEMP_MIN is -10 °C), and the value is right-aligned inside them.
 INDOOR_SLOT_CHARS = 3
@@ -68,8 +75,8 @@ INDOOR_SLOT_CHARS = 3
 # These four numbers must match INDOOR_TEMP_X/Y/SCALE/CHARS in
 # `kindle/local/env.sh`: the Kindle writes at those coordinates and nothing here
 # can tell it otherwise. `tests/test_kindle.py` keeps the two sides in step.
-INDOOR_SLOT_X = 492
-INDOOR_SLOT_Y = 126
+INDOOR_SLOT_X = 468
+INDOOR_SLOT_Y = 118
 
 # On-screen copy is Italian on purpose: the panel hangs on an Italian wall.
 # Only code comments and documentation are in English.

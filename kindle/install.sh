@@ -191,8 +191,8 @@ step "Installing the KUAL extension in $EXT_DIR"
 # than a menu entry looked for in vain later.
 kual="$(ssh "$KINDLE" "ls -d /mnt/us/extensions/*/ 2>/dev/null | wc -l" 2>/dev/null | tr -d ' ')"
 
-# Copied even where KUAL is missing: five small files, already in place if it
-# ever arrives.
+# Copied even where KUAL is missing: a handful of small files, already in place
+# if it ever arrives.
 COPYFILE_DISABLE=1 tar c --format=ustar -C "$HERE/extensions/k4weather" . \
   | ssh "$KINDLE" "mkdir -p '$EXT_DIR' && cd '$EXT_DIR' && tar x"
 ssh "$KINDLE" "find '$EXT_DIR' -name '._*' | xargs rm -f" 2>/dev/null || true
@@ -233,4 +233,20 @@ To get your Kindle back as an ebook reader:
 
 Or hold the power button for ~20s: nothing starts the dashboard at boot, so a
 reboot always comes back a reader.
+
+If a KUAL entry looks like it does nothing — the menu prints the action, exits,
+and the reader comes back — the error is not lost, it is just somewhere nobody
+looks. In order:
+
+    KUAL > k4-weather > "Meteo: diagnostica"
+
+writes k4weather-diagnostica.txt to the root of the Kindle's USB drive, which
+is the whole picture with no computer needed beyond the one you read it on. It
+gathers, among other things, the two logs worth reading directly:
+
+    ssh $KINDLE 'cat /var/tmp/KUAL.log'                  # KUAL's own: the
+                                                         # shell errors of a
+                                                         # menu action, and the
+                                                         # only place they go
+    ssh $KINDLE 'cat $EXT_DIR/kual.log'                  # this extension's
 EOF

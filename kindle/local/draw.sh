@@ -35,9 +35,9 @@ value=$("$DIR/indoor-temp.sh") || exit "$status"
 # The blank left in the image, in pixels, and the multiplier fbink applies to
 # its 8x16 bitmap font. Must match INDOOR_SLOT_X/Y, INDOOR_SCALE and
 # INDOOR_SLOT_CHARS in src/k4weather/model.py.
-x=${INDOOR_TEMP_X:-492}
-y=${INDOOR_TEMP_Y:-126}
-scale=${INDOOR_TEMP_SCALE:-3}
+x=${INDOOR_TEMP_X:-468}
+y=${INDOOR_TEMP_Y:-118}
+scale=${INDOOR_TEMP_SCALE:-4}
 chars=${INDOOR_TEMP_CHARS:-3}
 
 if [ -x "$FBINK" ]; then

@@ -1,10 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- KUAL extension descriptor. The id has to match the directory name under
-     /mnt/us/extensions, or KUAL skips the extension without saying why. -->
+     /mnt/us/extensions, or KUAL skips the extension without saying why.
+
+     A word on the shape of the actions in menu.json, since JSON allows no
+     comments of its own and the reason is not obvious.
+
+     KUAL turns a menu action into a throwaway script
+
+         #!/bin/ash
+         { <action> ; } 2>>/var/tmp/KUAL.log &
+
+     and runs it with /bin/sh, with the working directory set to this folder.
+     Two things follow, and both have bitten this extension:
+
+     - the action's standard error goes to /var/tmp/KUAL.log and NOWHERE else.
+       A script that cannot be started fails there, silently, while the menu
+       has already printed the action on the status line — which reads exactly
+       like "it launched start.sh and nothing happened". That file is the first
+       place to look, always.
+     - "the working directory is this folder" is a promise made by a Java
+       kindlet on a 2011 device, and a relative action rides on it. The paths
+       below are absolute so that nothing depends on it, which is also what
+       kindle-dash's own KUAL extension does.
+
+     The leading /bin/sh is the other half: /mnt/us is a FAT partition, the
+     execute bit on it is a property of how the partition was mounted rather
+     than of the file, and naming the interpreter means the scripts run whether
+     or not the bit survived the copy. -->
 <extension>
 	<information>
 		<name>k4-weather</name>
-		<version>1.0</version>
+		<version>1.1</version>
 		<author>dev-whiterice</author>
 		<id>k4weather</id>
 	</information>

@@ -422,14 +422,18 @@ then writes the value on top of it with a second call.
 
 ```
 eips -g dash.png                                        the dashboard, dash included
-fbink -q -F IBM -S 3 -x 0 -y 0 -X 492 -Y 126 -- " 21"   the value, in the blank
+fbink -q -F IBM -S 4 -x 0 -y 0 -X 468 -Y 118 -- " 21"   the value, in the blank
 ```
 
 The second call is **not** `eips`. `eips` has one font and one size, 12×20 px
 cells, which next to an outdoor temperature 96 px tall reads as a footnote.
 [`fbink`](https://github.com/NiLuJe/FBInk) scales its 8×16 bitmap font by a
-whole number — `-S 3` gives characters of 24×48 px — and `-X`/`-Y` place them to
-the pixel instead of to the cell.
+whole number — `-S 4` gives characters of 32×64 px, whose digits stand about
+48 px tall, between the 26 px figures beside the forecast and the 96 px of the
+forecast itself — and `-X`/`-Y` place them to the pixel instead of to the cell.
+Only whole numbers are on offer, so the size is a choice between `-S 3` and
+`-S 4` rather than a dial; the layout follows whichever it is, because the hole
+is computed from `INDOOR_SCALE` and not written down.
 
 It is a static ARM binary, not ours to vendor: download the **legacy** build
 (the Kindle 4 is an einkfb device, not one of the newer mxcfb ones) from [its
@@ -472,13 +476,14 @@ after ten seconds or so the device suspends. From then on it wakes by itself at
 
 `install.sh` also puts a KUAL extension in `/mnt/us/extensions/k4weather`, so
 the panel can be brought up from the device's own menu — no cable, no SSH.
-Three entries, under **k4-weather**:
+Four entries, under **k4-weather**:
 
 | Entry | What it does |
 |---|---|
 | *Meteo: avvia il pannello* | the real start, detached (see below) |
 | *Meteo: prova (scarica e disegna)* | one download, one draw, no loop and no suspend — the reader keeps running underneath |
 | *Meteo: ferma e torna al lettore* | `stop.sh` followed by `framework start` |
+| *Meteo: diagnostica* | writes `k4weather-diagnostica.txt` to the root of the USB drive; changes nothing |
 
 KUAL itself is not part of this project: it has to be installed already, from
 [its own page](https://wiki.mobileread.com/wiki/KUAL). On a Kindle 4 it is the
@@ -494,9 +499,44 @@ back to `nohup` and a double fork where busybox has no `setsid` — and only the
 lets go of it. It also refuses to start a second loop, which would mean two
 processes competing for the screen and for the RTC wakeup.
 
+**Why the entries name `/bin/sh` and an absolute path.** Both halves of
+
+```json
+"action": "/bin/sh /mnt/us/extensions/k4weather/bin/start.sh"
+```
+
+are there to remove an assumption. KUAL runs an action by writing a throwaway
+`#!/bin/ash` script — `{ <action> ; } 2>>/var/tmp/KUAL.log &` — and launching it
+with the working directory set to the extension folder. A *relative* action
+rides on that last part, which is a promise made by a Java kindlet on a 2011
+device; kindle-dash's own extension uses an absolute path and so does this one.
+Naming `/bin/sh` removes the other assumption: `/mnt/us` is FAT, where the
+execute bit is synthesised from the mount options rather than stored per file,
+so calling a script directly is a bet on how the partition happens to be
+mounted.
+
+**When a menu entry appears to do nothing.** This is the failure mode of every
+KUAL extension, and it looks the same whatever caused it: the status line prints
+the action, the menu exits, the reader comes back, and nothing else happens. The
+error is not lost — it is in a file nothing shows you:
+
+| File | What is in it |
+|---|---|
+| `/var/tmp/KUAL.log` | KUAL's own. The shell's `not found` / `Permission denied` for a menu action goes here and **nowhere else**. Look here first. |
+| `/mnt/us/extensions/k4weather/kual.log` | what these scripts say for themselves, including runs where `/mnt/us/dashboard` was not there to log into |
+| `/mnt/us/dashboard/logs/dash.log` | the loop itself, once it starts |
+
+*Meteo: diagnostica* collects all three, plus the state of the installation and
+an actual "can this device execute a script" probe, into
+`k4weather-diagnostica.txt` at the root of the USB drive — readable by plugging
+the Kindle into any computer. That is the entry to reach for first, because the
+alternative is reading a screen that gets repainted before you can.
+
 Everything these scripts have to say goes on the screen with `eips` as well as
-into `logs/kual.log`: a device driven from its own menu has no terminal to
-print to. The messages are in Italian, like the panel.
+into the log: a device driven from its own menu has no terminal to print to.
+Failures say it twice, a few seconds apart, because KUAL exits and the framework
+repaints the home screen over the first attempt. The messages are in Italian,
+like the panel.
 
 **On the stop entry.** While the dashboard runs the framework is down, so KUAL
 is not on screen and this entry cannot be reached — the way back is a reboot

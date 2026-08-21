@@ -18,7 +18,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def cfg() -> Config:
     """The default configuration, pinned to the location of the fixtures."""
     return Config(
-        location=Location(name="Caoria", latitude=46.19647, longitude=11.67804),
+        locations=(Location(id="caoria", name="Caoria", latitude=46.19647, longitude=11.67804),),
         units=Units(),
         display=Display(),
         features=Features(),

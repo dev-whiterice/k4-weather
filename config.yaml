@@ -1,12 +1,46 @@
 # k4-weather configuration.
-# Phase 1: a single fixed location. Change lat/lon/name below to move it.
+#
+# The panel shows one location at a time and the Kindle's page buttons walk
+# through the list below: the first entry is the primary — the one on screen
+# after an install — and the order here is the order the buttons follow.
+#
+# `id` is written by hand, not derived from `name`: it becomes a file name and
+# a URL, and it is what the device remembers between reboots. Lowercase ASCII,
+# digits and dashes. Change an id and you have created a different location,
+# which is the point — reordering or renaming then costs nothing, because
+# nothing anywhere refers to a position in this list.
 
-location:
-  name: "Caoria"
-  latitude: 46.19647
-  longitude: 11.67804
-  # "auto" lets Open-Meteo resolve the timezone from the coordinates
-  timezone: "auto"
+locations:
+  - id: caoria
+    name: "Caoria"
+    latitude: 46.19647
+    longitude: 11.67804
+    # "auto" lets Open-Meteo resolve the timezone from the coordinates
+    timezone: "auto"
+
+  - id: fumane
+    name: "Fumane"
+    latitude: 45.54160
+    longitude: 10.88548
+    timezone: "auto"
+
+  - id: castel-dazzano
+    name: "Castel d'Azzano"
+    latitude: 45.35588
+    longitude: 10.95299
+    timezone: "auto"
+
+  - id: ferrara-monte-baldo
+    name: "Ferrara di Monte Baldo"
+    latitude: 45.67408
+    longitude: 10.85911
+    timezone: "auto"
+
+  - id: verona
+    name: "Verona"
+    latitude: 45.43854
+    longitude: 10.99380
+    timezone: "auto"
 
 units:
   temperature: "celsius"      # celsius | fahrenheit

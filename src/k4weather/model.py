@@ -17,7 +17,7 @@ from typing import Any, Sequence
 from markupsafe import Markup
 
 from . import astro, wmo
-from .config import Config
+from .config import Config, Location
 
 # Hourly chart geometry, in SVG units (they match the pixels of the final PNG).
 CHART_WIDTH = 556
@@ -440,11 +440,17 @@ def build_dashboard(
     air_quality: dict[str, Any] | None,
     cfg: Config,
     now: datetime | None = None,
+    location: Location | None = None,
 ) -> Dashboard:
     """Turn the raw API payloads into the print-ready model.
 
     `now` is the local time of the location; pass it explicitly to get a
     reproducible render out of a fixture.
+
+    `location` says which of the configured places these payloads describe, and
+    defaults to the primary one. It supplies nothing but the name on screen —
+    every figure below comes from the payloads themselves — but that name is
+    the only thing telling two otherwise identical images apart.
     """
     current = forecast.get("current", {})
     daily = forecast.get("daily", {})
@@ -479,7 +485,7 @@ def build_dashboard(
         moon_illum = f"{round(phase.illumination * 100)}%"
 
     return Dashboard(
-        location=cfg.location.name,
+        location=(location or cfg.location).name,
         date_long=f"{GIORNI[local_now.weekday()]} {local_now.day} {MESI[local_now.month - 1]}",
         updated_at=local_now.strftime("%H:%M"),
         generated_iso=local_now.isoformat(timespec="minutes"),

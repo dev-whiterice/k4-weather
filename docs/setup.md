@@ -17,15 +17,17 @@ On public repositories Actions has no limit.
 ```
 k4-weather (public)
   main    code, config, workflow
-  output  dashboard.png  ──►  GitHub Pages  ──►  Kindle
+  output  dashboard-<id>.png × N  ──►  GitHub Pages  ──►  Kindle
+          locations.json / .txt
 ```
 
 The `output` branch is rewritten on every run with a force push of a single
 commit: it accumulates no history and stays a constant size.
 
-> The repository is public: **the image and the code are readable by anyone**,
-> and the dashboard shows the name of the location. Commit metadata becomes
-> public too, the author's email address included.
+> The repository is public: **the images and the code are readable by anyone**,
+> and each dashboard shows the name of its location — so the list in
+> `config.yaml` is public as well, and it is a list of places you care about.
+> Commit metadata becomes public too, the author's email address included.
 
 ---
 
@@ -72,14 +74,24 @@ The first build takes a couple of minutes, then
 checking it from your phone, and it is the URL
 [`fetch-dashboard.sh`](../kindle/local/fetch-dashboard.sh) uses.
 
-## 4. Check the first image
+## 4. Check the first images
 
 ```sh
 gh run watch --repo dev-whiterice/k4-weather
 
-curl -sI https://dev-whiterice.github.io/k4-weather/dashboard.png | head -1
+# The manifest first: it is what the Kindle asks for before anything else, and
+# it names every image that should exist.
+curl -sL https://dev-whiterice.github.io/k4-weather/locations.txt
+# caoria	dashboard-caoria.png	Caoria
+# fumane	dashboard-fumane.png	Fumane
+# ...
+
+curl -sI https://dev-whiterice.github.io/k4-weather/dashboard-caoria.png | head -1
 # HTTP/2 200
 ```
+
+The Pages site itself shows all of them side by side, which is the quickest way
+to see that a location you have just added really renders.
 
 From here on the workflow restarts by itself at :00 and :30.
 
@@ -146,6 +158,12 @@ Once started for real, the Kindle suspends after 10-15 seconds and wakes at :15
 and :45, offset by 15 minutes from generation to absorb the delay of the GitHub
 Actions cron.
 
+To change the location on the panel: **press power**, then the page buttons —
+forward for the next place in the list, back for the previous one. It needs
+power first because the keypad on a Kindle 4 cannot wake the device, which is a
+property of the driver and not a setting:
+[`kindle/README.md`](../kindle/README.md#switching-locations).
+
 ---
 
 ## If something goes wrong
@@ -162,13 +180,23 @@ Actions cron.
 | The indoor temperature lands off its blank | Move it with `INDOOR_TEMP_X/Y`, in pixels, and `INDOOR_SLOT_X/Y` in `model.py` by the same amount — or the dash underneath stays where it was |
 | The indoor temperature is drawn small | `fbink` is not on the device, or not executable: `local/draw.sh` fell back to `eips`. See [`kindle/README.md`](../kindle/README.md#how-the-number-gets-on-screen) |
 | The indoor temperature reads too high | Normal before calibration: it is the battery, not the room. See [`kindle/README.md`](../kindle/README.md#calibrating-the-offset) |
+| The page buttons do nothing | Press **power** first: the keypad on a Kindle 4 cannot wake the device. If they do nothing while it is awake, `INTERACT=false` in `env.sh`, or the codes in `KEY_NEXT`/`KEY_PREV` are not what this device sends — `kindle/tools/keytest.sh keys` says what it sends |
+| A location is skipped by the buttons | Its image never downloaded, so it is not in the cycle: check `cache/` on the device and the Pages site for `dashboard-<id>.png`. CI publishes nothing for a location whose data did not arrive, and says so in the run log |
+| One location shows an old time, the others are current | Open-Meteo did not answer for that one. The device kept the cached copy on purpose; the next run usually fixes it |
+| The panel sleeps and only power wakes it | An RTC alarm left armed after a wake-up by hand. `local/suspend.sh` clears it before arming its own — check `logs/dash.log` for `RTC still reads` |
 | Ghosting on the screen | `FULL_DISPLAY_REFRESH_RATE` in `kindle/local/env.sh`: lower it to do full refreshes more often |
 | Battery draining too fast | Restrict `REFRESH_SCHEDULE` to daytime hours, for example `"15,45 7-23 * * *"` |
 
 ## Maintenance
 
-- **Changing location**: edit `location` in `config.yaml` and push. The
-  workflow restarts on the push and the image updates within minutes.
+- **Adding or changing a location**: edit `locations` in `config.yaml` and push.
+  The workflow restarts on the push and the images update within minutes; the
+  Kindle picks up the new list at its next wake-up, with no reinstall — the
+  device reads the list rather than holding a copy of it. Up to eight, each
+  costing two API calls and one screenshot per run.
+- **Removing one**: delete it from the list. Its image stops being published,
+  and the device drops the cached copy and takes it out of the button cycle on
+  its next refresh.
 - **Tweaking the design**: `make preview`, then open `out/dashboard.html` in a
   browser. After touching the icons, `make icons`.
 - **PAT expiry**: the only deadline in the project, see step 5.
@@ -180,7 +208,7 @@ downloads **the image**, never the code, so a push alone never reaches it.
 
 | What changed | What to do |
 |---|---|
-| Anything under `src/`, or `config.yaml` | `git push`. The workflow re-renders and republishes within minutes; the Kindle picks the new image up at its next wake-up |
+| Anything under `src/`, or `config.yaml` | `git push`. The workflow re-renders and republishes within minutes; the Kindle picks the new images up at its next wake-up. **Adding a location is only this** — nothing on the device needs touching |
 | Anything under `kindle/` | `./kindle/install.sh`, then restart the loop |
 
 Restarting matters: `kindle-dash` reads `local/env.sh` once, at start-up, so a

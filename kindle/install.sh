@@ -41,12 +41,12 @@ curl -sSfL "$asset" | tar xz -C "$BUILD"
 [ -x "$BUILD/dash.sh" ] || fail "the archive does not contain dash.sh"
 
 step "Applying the k4-weather configuration"
-cp "$HERE/local/env.sh" "$BUILD/local/env.sh"
-cp "$HERE/local/fetch-dashboard.sh" "$BUILD/local/fetch-dashboard.sh"
-cp "$HERE/local/indoor-temp.sh" "$BUILD/local/indoor-temp.sh"
-cp "$HERE/local/draw.sh" "$BUILD/local/draw.sh"
-url="$(grep -m1 '^DASH_URL=' "$BUILD/local/fetch-dashboard.sh" | cut -d'"' -f2)"
-echo "    image source: $url"
+for script in env.sh fetch-dashboard.sh indoor-temp.sh draw.sh \
+              locations.sh interact.sh suspend.sh; do
+  cp "$HERE/local/$script" "$BUILD/local/$script"
+done
+base_url="$(grep -m1 '^BASE_URL=' "$BUILD/local/fetch-dashboard.sh" | cut -d'"' -f2)"
+echo "    image source: $base_url"
 
 # fbink is what draws the indoor temperature at a size worth reading, and it is
 # neither on the device nor in this repository: a static ARM binary you download
@@ -75,12 +75,47 @@ patched="$(grep -c 'local/draw.sh' "$BUILD/dash.sh" || true)"
     two sed lines from this script and set INDOOR_TEMP=false in local/env.sh."
 echo "    indoor temperature: $patched eips call sites routed through local/draw.sh"
 
-step "Checking that the image is reachable"
+# The other two rewrites, and the reason the page buttons work at all.
+#
+# kindle-dash sleeps ten seconds before suspending — a window left open purely
+# so the loop can be interrupted by hand — and then suspends inside its own
+# `rtc_sleep`, a function with nothing around it to hook into. Both become
+# calls to scripts of ours:
+#
+#   sleep 10   ->  local/interact.sh 10        listen for the page buttons
+#                                              instead of doing nothing
+#   rtc_sleep  ->  local/suspend.sh            the same suspend, plus the
+#                                              knowledge of whether the clock
+#                                              or a person ended it
+#
+# `rtc_sleep` is then dead code inside dash.sh; it is left alone rather than
+# deleted, so the file stays as close to upstream as possible.
+sed -i.bak \
+  -e 's|^    sleep 10$|    "$DIR/local/interact.sh" 10|' \
+  -e 's|^    rtc_sleep "\$next_wakeup_secs"$|    "$DIR/local/suspend.sh" "$next_wakeup_secs"|' \
+  "$BUILD/dash.sh"
+rm -f "$BUILD/dash.sh.bak"
+
+for hook in interact suspend; do
+  grep -q "local/${hook}.sh" "$BUILD/dash.sh" || fail "dash.sh has no call site for
+    local/${hook}.sh: kindle-dash has changed the shape of its main loop and the
+    location switching needs rewiring. To install without it, drop this sed from
+    the script and set INTERACT=false in local/env.sh — the panel then behaves
+    exactly as it did before, on one location."
+done
+echo "    location switching: the sleep window and the suspend now go through local/"
+
+step "Checking that the images are reachable"
 # Better to find out now that the URL is wrong, than in front of an e-ink
 # screen that does not refresh and does not say why.
-code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || true)"
+#
+# The manifest, not one image: it is the first thing the device asks for, and
+# it is also the only file that says how many images there should be.
+code="$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/locations.txt" || true)"
 if [ "$code" = "200" ]; then
-  echo "    HTTP 200, the image is there"
+  count="$(curl -sSL "$base_url/locations.txt" | grep -c . || true)"
+  echo "    HTTP 200, ${count} location(s) published:"
+  curl -sSL "$base_url/locations.txt" | cut -f1,3 | sed 's/^/      /'
 else
   echo "    WARNING: HTTP ${code:-no response}"
   echo "    On 404, either Pages is off for this repository (Settings > Pages:"

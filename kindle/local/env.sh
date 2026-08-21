@@ -26,6 +26,43 @@ export SLEEP_SCREEN_INTERVAL=3600
 export LOW_BATTERY_REPORTING=${LOW_BATTERY_REPORTING:-true}
 export LOW_BATTERY_THRESHOLD_PERCENT=10
 
+# ------------------------------------------------------------ location switching
+# The panel shows one location at a time and the page buttons walk through the
+# list CI publishes. All of it is off with INTERACT=false, which also gives the
+# upstream behaviour back: the window below becomes the plain ten-second sleep
+# kindle-dash does before suspending.
+export INTERACT=${INTERACT:-true}
+
+# How long the panel listens after being woken up by hand, and how much each
+# press adds to that. Walking five locations must not need five presses inside
+# one shrinking window.
+export INTERACT_SECONDS=${INTERACT_SECONDS:-25}
+export INTERACT_EXTEND=${INTERACT_EXTEND:-15}
+
+# A full refresh when the listening window opens, as the only feedback that the
+# device is awake and paying attention. It costs one flash of the screen and
+# leaves nothing on the image to clean off afterwards.
+export INTERACT_FLASH=${INTERACT_FLASH:-true}
+
+# Which device the buttons arrive on, and the codes they send. Measured on this
+# Kindle 4 with kindle/tools/keytest.sh — they are not the standard input.h
+# meanings and are not worth guessing:
+#
+#   191  page forward, right side      104  page forward, left side
+#   109  page back, right side         193  page back, left side
+#
+# Both sides are accepted for each direction, so the panel answers whichever
+# thumb is on it. event0 is "tequila-keypad"; the 5-way is event1 (105 left,
+# 106 right) if you would rather use that.
+export KEY_DEVICE=${KEY_DEVICE:-/dev/input/event0}
+export KEY_NEXT=${KEY_NEXT:-"191 104"}
+export KEY_PREV=${KEY_PREV:-"109 193"}
+
+# How much shorter than the alarm counts as "somebody woke it up" rather than
+# "the clock did". Generous on purpose: the RTC has second resolution and the
+# resume itself takes a moment, so a scheduled wake-up can land slightly early.
+export EARLY_WAKE_MARGIN=${EARLY_WAKE_MARGIN:-10}
+
 # ---------------------------------------------------------- indoor temperature
 # The Kindle draws its own temperature reading on top of the image it downloads:
 # the sensor is here, the image is built in the cloud. false makes local/draw.sh

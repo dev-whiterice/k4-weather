@@ -15,7 +15,7 @@ from typing import Any
 
 import requests
 
-from .config import Config
+from .config import Config, Location
 
 log = logging.getLogger(__name__)
 
@@ -86,15 +86,25 @@ def _get_json(
     raise last
 
 
-def fetch_forecast(cfg: Config, session: requests.Session | None = None) -> dict[str, Any]:
-    """Forecast payload: current observation, hourly series and daily series."""
+def fetch_forecast(
+    cfg: Config,
+    session: requests.Session | None = None,
+    location: Location | None = None,
+) -> dict[str, Any]:
+    """Forecast payload: current observation, hourly series and daily series.
+
+    `location` defaults to the primary one; a multi-location run passes each in
+    turn. Everything else in the query comes from the shared config, so the
+    images only ever differ by the place they describe.
+    """
+    place = location or cfg.location
     params = {
-        "latitude": cfg.location.latitude,
-        "longitude": cfg.location.longitude,
+        "latitude": place.latitude,
+        "longitude": place.longitude,
         "current": ",".join(CURRENT_VARS),
         "hourly": ",".join(HOURLY_VARS),
         "daily": ",".join(DAILY_VARS),
-        "timezone": cfg.location.timezone,
+        "timezone": place.timezone,
         "forecast_days": cfg.api_forecast_days,
         "temperature_unit": cfg.units.temperature,
         "wind_speed_unit": cfg.units.wind_speed,
@@ -104,16 +114,19 @@ def fetch_forecast(cfg: Config, session: requests.Session | None = None) -> dict
 
 
 def fetch_air_quality(
-    cfg: Config, session: requests.Session | None = None
+    cfg: Config,
+    session: requests.Session | None = None,
+    location: Location | None = None,
 ) -> dict[str, Any] | None:
     """Air quality; None when disabled or unreachable."""
     if not cfg.features.air_quality:
         return None
+    place = location or cfg.location
     params = {
-        "latitude": cfg.location.latitude,
-        "longitude": cfg.location.longitude,
+        "latitude": place.latitude,
+        "longitude": place.longitude,
         "current": "european_aqi,pm2_5",
-        "timezone": cfg.location.timezone,
+        "timezone": place.timezone,
     }
     try:
         return _get_json(AIR_QUALITY_URL, params, session)

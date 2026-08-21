@@ -1,19 +1,23 @@
 # The client on the Kindle 4
 
-The Kindle computes almost nothing: it wakes up, downloads a PNG, draws it,
-writes its own temperature on top of it and goes back to sleep. All the fragile
-parts — waiting for Wi-Fi, modern TLS, suspend to RAM, wake-up scheduled by the
-hardware clock — are already solved by
+The Kindle computes almost nothing: it wakes up, downloads the images, draws
+one, writes its own temperature on top of it and goes back to sleep. All the
+fragile parts — waiting for Wi-Fi, modern TLS, suspend to RAM, wake-up
+scheduled by the hardware clock — are already solved by
 [pascalw/kindle-dash](https://github.com/pascalw/kindle-dash), used here as the
 runtime. This directory holds the files that replace or extend its own:
 
 | File | Role |
 |---|---|
 | `local/env.sh` | configuration of the loop, and of everything below |
-| `local/fetch-dashboard.sh` | the download, with retries |
+| `local/fetch-dashboard.sh` | the download: every location, with retries |
+| `local/locations.sh` | the list, the cycle and the state file (sourced, not run) |
+| `local/interact.sh` | listens to the page buttons and moves between locations |
+| `local/suspend.sh` | suspend to RAM, and telling the clock from a person |
 | `local/indoor-temp.sh` | the temperature sensor, read and calibrated |
 | `local/draw.sh` | `eips` plus the temperature stamped on top, with `fbink` |
 | `extensions/k4weather/` | the KUAL menu, to start the panel without a computer |
+| `tools/keytest.sh` | diagnostics for the buttons, run on the device (below) |
 | `fbink` | not in this repository: the binary that draws the value large (below) |
 
 ## What `kindle-dash` actually does
@@ -41,6 +45,9 @@ Then it enters the main loop, which on every pass:
 4. **waits 10 seconds** — the only useful window to interrupt it;
 5. writes the duration to the RTC and suspends to RAM with
    `echo mem > /sys/power/state`.
+
+Steps 4 and 5 are the two the installer rewrites, and
+[switching locations](#switching-locations) is why.
 
 Two behaviours that explain how our configuration is written:
 
@@ -72,14 +79,16 @@ mkdir -p kindle-dash
 curl -sSL "$(curl -sSL https://api.github.com/repos/pascalw/kindle-dash/releases/latest \
   | grep browser_download_url | cut -d'"' -f4 | head -n1)" | tar xz -C kindle-dash
 
-# 2. Replace the example configuration with ours, and route the drawing
-#    through our wrapper (see "The indoor temperature" below)
-cp kindle/local/env.sh             kindle-dash/local/env.sh
-cp kindle/local/fetch-dashboard.sh kindle-dash/local/fetch-dashboard.sh
-cp kindle/local/indoor-temp.sh     kindle-dash/local/indoor-temp.sh
-cp kindle/local/draw.sh            kindle-dash/local/draw.sh
-cp kindle/fbink                    kindle-dash/fbink        # optional, see below
+# 2. Replace the example configuration with ours, and rewrite the three call
+#    sites kindle-dash offers no hook for: the drawing (see "The indoor
+#    temperature"), the sleep window and the suspend (see "Switching locations")
+cp kindle/local/*.sh kindle-dash/local/
+cp kindle/fbink      kindle-dash/fbink        # optional, see below
 sed -i.bak 's|/usr/sbin/eips|"$DIR/local/draw.sh"|g' kindle-dash/dash.sh
+sed -i.bak \
+  -e 's|^    sleep 10$|    "$DIR/local/interact.sh" 10|' \
+  -e 's|^    rtc_sleep "\$next_wakeup_secs"$|    "$DIR/local/suspend.sh" "$next_wakeup_secs"|' \
+  kindle-dash/dash.sh
 
 # 3. Copy to the Kindle (USBNetwork on, cable connected)
 rsync -vr kindle-dash/ root@192.168.15.244:/mnt/us/dashboard
@@ -98,11 +107,13 @@ As an alternative to step 3, a Kindle plugged in as a normal USB drive exposes
 `/mnt/us` as a disk: you can copy the `dashboard` folder in Finder and use SSH
 only for the commands.
 
-`DASH_URL` in `fetch-dashboard.sh` already points at the GitHub Pages site that
+`BASE_URL` in `fetch-dashboard.sh` already points at the GitHub Pages site that
 serves the `output` branch — not at `raw.githubusercontent.com`, whose rate
 limit would freeze the panel ([why, and how to turn Pages
 on](../docs/setup.md#3-turn-on-pages)). It embeds owner and repository name, so
-it needs changing if either does.
+it needs changing if either does. Nothing else is a URL: the device asks for
+`locations.txt` and then for exactly the file names that file gives it, so the
+naming of the images is never guessed on this side.
 
 ### If SSH times out with USBNetwork on
 
@@ -145,8 +156,11 @@ Ctrl-C.
 ssh root@192.168.15.244
 cd /mnt/us/dashboard
 
-# The download alone first, without touching the screen
+# The download alone first, without touching the screen. It fetches every
+# location, so what to look at is the cache, not only the file it hands back.
 ./local/fetch-dashboard.sh /tmp/test.png && echo OK && ls -l /tmp/test.png
+ls -l cache/                      # one PNG per location, plus locations.txt
+cat state/location                # the one that would be on screen
 ./xh --version                    # must run: it is a static ARM binary
 
 # The sensor, without touching the screen either
@@ -162,6 +176,163 @@ DEBUG=true ./start.sh
 If the image comes out **skewed or squashed**, the PNG is not grayscale: `eips`
 only accepts 8-bit gray with no alpha channel. On the generator side that check
 is automatic (`make inspect`).
+
+## Switching locations
+
+The panel shows one place at a time and the page buttons walk through the list
+in `config.yaml`. From the wall it is two gestures:
+
+1. **press power** — briefly. The screen does not change, the panel is now
+   awake and listening;
+2. **press a page button** — forward for the next location, back for the
+   previous one. The image changes in about a second, and every press buys
+   another fifteen seconds to press again. Then it goes back to sleep, on
+   schedule: pressing power at :20 does not postpone the :45 refresh.
+
+The same window also opens for ten seconds after every scheduled refresh, so at
+:15 and :45 the buttons work without touching power at all.
+
+### Why power first, and not just the buttons
+
+Because on a Kindle 4 the keypad cannot wake the device. It is not a setting:
+
+```sh
+cat /sys/devices/platform/tequila-keypad/power/wakeup     # prints nothing
+cat /sys/devices/platform/mxc_rtc.0/power/wakeup          # enabled
+```
+
+An **empty** value there is not the same as `disabled`. The kernel prints
+`enabled`/`disabled` only for devices that *can* wake the system and an empty
+string for those that cannot, so the driver never registered the keypad as a
+wakeup source and writing to the file is refused. Measured twice with
+[`tools/keytest.sh`](tools/keytest.sh): with the alarm armed for two minutes,
+pressing a page button changed nothing and no input event was delivered across
+the suspend; pressing power woke the device at 18 and 25 seconds, and the page
+buttons were then perfectly readable with the framework down.
+
+So: the power slider wakes it, below the evdev layer where the buttons live,
+and the buttons choose. That is the whole design.
+
+### The buttons
+
+Measured on this device, not taken from `input.h` — the codes are not the
+standard meanings and two of them are outside the normal range:
+
+| Button | Code | Device |
+|---|---|---|
+| page forward, right side | 191 | `event0` |
+| page forward, left side | 104 | `event0` |
+| page back, right side | 109 | `event0` |
+| page back, left side | 193 | `event0` |
+| 5-way in / left / right | 194 / 105 / 106 | `event1` |
+| MENU / BACK / HOME | 139 / 158 / 102 | `event0` |
+
+Both sides are accepted for each direction, so the panel answers whichever
+thumb is on it. Everything else is ignored on purpose: a Kindle that did
+something unexpected when someone pressed HOME would be worse than one that did
+nothing. The power slider is **not** in the table because it is not an evdev
+key at all on this device — it sits on `/sys/devices/virtual/misc/yoshibutton`
+and never reaches the input layer, which is exactly why it can wake the device
+and the others cannot.
+
+`KEY_NEXT` and `KEY_PREV` in `local/env.sh` hold those codes as space-separated
+lists. To drive the panel with the 5-way instead:
+
+```sh
+export KEY_DEVICE=${KEY_DEVICE:-/dev/input/event1}
+export KEY_NEXT=${KEY_NEXT:-"106"}     # push right
+export KEY_PREV=${KEY_PREV:-"105"}     # push left
+```
+
+### How it works
+
+The device holds three things under `/mnt/us/dashboard`:
+
+```
+cache/locations.txt   the list CI published: id <TAB> image <TAB> name
+cache/<id>.png        one image per location, downloaded ahead of being asked for
+state/location        the id on screen now, which survives a reboot
+```
+
+**Every location is downloaded on every refresh**, not just the one on screen.
+Switching then costs a file copy and a redraw — about a second, with the Wi-Fi
+off. Downloading on demand instead would mean waking the radio for each press:
+ten seconds of frozen screen, and nothing at all when the network is down. Five
+images are about a hundred kilobytes, next to nothing beside the cost of
+associating with the access point, which the refresh is paying anyway.
+
+**What is stored is the id, never a position in the list.** Reordering
+`config.yaml` therefore costs nothing, and removing a location leaves a state
+file naming something that no longer exists — which is noticed and corrected on
+the spot, instead of silently showing a different place under the wrong name. A
+location whose image has never downloaded is skipped by the buttons entirely: a
+press that led to a blank screen would look like a crash.
+
+**The image and the state file move in that order.** The id is recorded only
+once the panel is actually showing it, so a power cut between the two leaves the
+device naming what is on its screen rather than what it meant to draw.
+
+### The two rewrites in `dash.sh`
+
+`kindle-dash` has no hooks: `install.sh` rewrites two lines of its main loop,
+the same way it already redirects `eips` to `local/draw.sh`.
+
+| Upstream | Becomes | Why |
+|---|---|---|
+| `sleep 10` | `local/interact.sh 10` | that window did nothing but pass time; now it listens |
+| `rtc_sleep "$next_wakeup_secs"` | `local/suspend.sh "$next_wakeup_secs"` | the same suspend, plus knowing what ended it |
+
+`suspend.sh` compares how long the device actually slept against the alarm it
+set. Short by more than `EARLY_WAKE_MARGIN` seconds means a person pressed
+power, and the listening window opens; otherwise the clock did its job and the
+loop carries on. The remaining time is then slept off, so a wake-up by hand
+costs the schedule nothing.
+
+`rtc_sleep` is left in `dash.sh`, unused, so the file stays as close to
+upstream as it can. The installer fails loudly if either line has moved — that
+is a kindle-dash release having changed the shape of its loop, and it wants
+looking at rather than silently ignoring.
+
+One quirk worth knowing about, and handled: upstream arms the hardware clock
+only when `wakeup_enable` reads `0`. After a wake-up that the clock did not
+cause, a stale value left in that file would make every later arming a no-op
+and the panel would sleep until somebody pressed power again. `suspend.sh`
+reports what it found, clears it, and arms its own.
+
+### Turning it off
+
+```sh
+export INTERACT=${INTERACT:-false}     # in local/env.sh, then restart the loop
+```
+
+The listening window becomes the plain `sleep` it replaced — abort window
+included — and the panel shows the first location in the list and nothing else.
+The images for the others are still downloaded, which costs a few kilobytes and
+keeps the feature one variable away.
+
+### If the buttons do nothing
+
+[`tools/keytest.sh`](tools/keytest.sh) runs on the device and answers this in
+three phases, least invasive first. It needs nothing but `dd` and the shell —
+this Kindle has no `od`, no `hexdump` and no `xxd`, which is why it decodes raw
+`input_event` structures the long way round.
+
+```sh
+ssh root@192.168.15.244 'cat > /mnt/us/keytest.sh && chmod +x /mnt/us/keytest.sh' \
+  < kindle/tools/keytest.sh
+
+ssh root@192.168.15.244 /mnt/us/keytest.sh probe      # what this device exposes
+ssh -t root@192.168.15.244 /mnt/us/keytest.sh keys    # which code each button sends
+ssh root@192.168.15.244 /mnt/us/keytest.sh wake       # what can wake it from suspend
+ssh root@192.168.15.244 /mnt/us/keytest.sh wake-log   # the verdict of the last one
+```
+
+`probe` and `keys` are safe at any time. `wake` suspends the device: it detaches
+itself, drops the SSH session with it, and leaves its answer in
+`/mnt/us/keytest-wake.log`. There is always an RTC alarm armed as a safety net,
+so the worst case is a wait — and holding power for ~20 seconds reboots out of
+anything. Run `wake --dry-run` first: it does everything except the one
+irreversible step and stays attached to the terminal.
 
 ## The indoor temperature
 
@@ -346,15 +517,24 @@ ssh root@192.168.15.244
 the second command it looks like the Kindle has died. When in doubt, a reboot
 (power button held for ~20 seconds) puts everything back.
 
-The moment to catch it is the 10-second window before suspend. Miss it and the
-device only becomes reachable again at the next wake-up — at most 30 minutes
-later.
+The moment to catch it is the 10-second window before suspend — the same one
+that listens for the page buttons. `interact.sh` watches for its parent going
+away and stops with it, so `stop.sh` does not leave one counting down behind a
+framework that has just come back. Miss the window and the device only becomes
+reachable again at the next wake-up — at most 30 minutes later, or straight
+away by pressing power, which now wakes it into that same window.
 
 ## Power draw
 
 With a refresh every 30 minutes and suspend to RAM in between, expected battery
 life is in the order of weeks. To stretch it, restrict `REFRESH_SCHEDULE` to
 the hours you actually look at the screen, for example `"15,45 7-23 * * *"`.
+
+Switching locations barely shows up next to that. Downloading five images
+instead of one adds about a hundred kilobytes to a transfer whose real cost is
+associating with the access point; a wake-up by hand keeps the device awake for
+half a minute with the radio **off**, and the screen refreshes it does are the
+same ones a scheduled update would have done anyway.
 
 Careful: raising the interval beyond `SLEEP_SCREEN_INTERVAL` (3600 s) makes the
 "kindle is sleeping" screen appear instead of the dashboard. If you add a night

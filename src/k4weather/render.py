@@ -8,6 +8,8 @@ and is fed to headless Chromium in CI, with identical results.
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -82,13 +84,20 @@ def build_html(dashboard: Dashboard, cfg: Config) -> str:
     )
 
 
-def html_to_png(html: str, output: Path, cfg: Config) -> Path:
-    """Screenshot the HTML with headless Chromium."""
+@contextmanager
+def screenshotter(cfg: Config) -> Iterator[Callable[[str, Path], Path]]:
+    """One Chromium session, yielding a `take(html, output)` that reuses it.
+
+    Launching the browser is by far the slowest part of a render — seconds,
+    against tens of milliseconds for the screenshot itself — so a run that
+    draws one image per location opens it once and keeps it. The page is reused
+    too: `set_content` replaces the whole document, so nothing carries over
+    between images except the font cache, which is exactly what we want warm.
+    """
     from playwright.sync_api import sync_playwright
 
     width, height = cfg.display.width, cfg.display.height
     scale = max(1, cfg.display.scale_factor)
-    output.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
         # sRGB and full hinting keep the output identical between a developer's
@@ -101,14 +110,25 @@ def html_to_png(html: str, output: Path, cfg: Config) -> Path:
                 viewport={"width": width, "height": height},
                 device_scale_factor=scale,
             ).new_page()
-            page.set_content(html, wait_until="load")
-            # Fonts are inlined, but the layout must only be measured once they
-            # are actually loaded.
-            page.evaluate("() => document.fonts.ready")
-            page.screenshot(path=str(output), type="png",
-                            clip={"x": 0, "y": 0, "width": width, "height": height})
+
+            def take(html: str, output: Path) -> Path:
+                output.parent.mkdir(parents=True, exist_ok=True)
+                page.set_content(html, wait_until="load")
+                # Fonts are inlined, but the layout must only be measured once
+                # they are actually loaded.
+                page.evaluate("() => document.fonts.ready")
+                page.screenshot(path=str(output), type="png",
+                                clip={"x": 0, "y": 0, "width": width, "height": height})
+                return output
+
+            yield take
         finally:
             # Without this a failed screenshot leaks a Chromium process and the
             # CI job hangs until its timeout.
             browser.close()
-    return output
+
+
+def html_to_png(html: str, output: Path, cfg: Config) -> Path:
+    """Screenshot one HTML document with headless Chromium."""
+    with screenshotter(cfg) as take:
+        return take(html, output)

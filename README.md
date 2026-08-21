@@ -1,9 +1,10 @@
 # k4-weather
 
 Weather dashboard for a **jailbroken non-touch Kindle 4**: every 30 minutes
-GitHub Actions renders a 600×800 grayscale PNG from the
-[Open-Meteo](https://open-meteo.com) API, the Kindle downloads it and draws it
-with `eips`. No server to keep alive.
+GitHub Actions renders one 600×800 grayscale PNG per configured location from
+the [Open-Meteo](https://open-meteo.com) API, the Kindle downloads them all and
+draws one with `eips`. The page buttons switch between them. No server to keep
+alive.
 
 ![preview](docs/preview.png)
 
@@ -15,21 +16,26 @@ with `eips`. No server to keep alive.
 ```
 GitHub Actions (every 30 min)                      Kindle 4 (every 30 min)
 ──────────────────────────────                     ──────────────────────
-Open-Meteo  ─►  data model                         wakes from RTC
-                    │                                    │
-                    ▼                              waits for wifi
-             HTML + CSS + SVG                            │
-                    │                                    ▼
-                    ▼                              xh get dashboard.png
+for each location:                                 wakes from RTC
+Open-Meteo  ─►  data model                               │
+                    │                              waits for wifi
+                    ▼                                    │
+             HTML + CSS + SVG                            ▼
+                    │                              xh get locations.txt
+                    ▼                              xh get dashboard-<id>.png × N
           headless Chromium (screenshot)                 │
                     │                                    ▼
-                    ▼                              eips -g dashboard.png
+                    ▼                              eips -g the current one
         8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
                     ▼                              fbink -S 3 … " 21"
-        branch `output` ─► GitHub Pages ───────────────► │
-                                                         ▼
-                                                   suspend to RAM
+     dashboard-<id>.png + locations.json                 │
+                    │                                    ▼
+        branch `output` ─► GitHub Pages ───────────────► suspend to RAM
+                                                         │
+                                             power ──────┤ wakes into a
+                                             ◄ ► ────────┘ 25s window that
+                                                           switches location
 ```
 
 The Kindle is kept deliberately dumb: it downloads an image and draws it. All
@@ -54,18 +60,46 @@ leaves for it.
 - **Footer**: sunrise, sunset, moon phase with illumination percentage, and the
   time the image was generated
 
+## Several locations
+
+`config.yaml` holds a list of up to eight places; the first is the one on
+screen after an install and the order is the order the buttons walk through.
+Each gets its own image, and the Kindle downloads all of them on every refresh
+so switching costs a redraw rather than a Wi-Fi round trip.
+
+```yaml
+locations:
+  - id: caoria            # lowercase ASCII: it becomes a file name and a URL
+    name: "Caoria"        # what appears on the panel; anything goes here
+    latitude: 46.19647
+    longitude: 11.67804
+    timezone: "auto"
+```
+
+The `id` is written by hand rather than derived from `name` on purpose. It is
+an identity, not a position: reordering or renaming a location changes nothing
+anywhere else, and no slugifier has to guess what `Sant'Anna di Valdieri`
+should be called. What CI publishes beside the images is `locations.json` and
+`locations.txt` — the same list twice, for the preview page and for a device
+whose shell has no JSON parser.
+
+On the Kindle: **press power**, then the page buttons.
+[`kindle/README.md`](kindle/README.md#switching-locations) explains why it takes
+power first — the keypad on a Kindle 4 cannot wake the device, and that is a
+property of the driver, not a setting.
+
 ## Development
 
 ```sh
 make setup      # virtualenv + dependencies + Chromium
-make preview    # render out/dashboard.png from the fixture, no network
-make generate   # the same, with live data
+make preview    # render the primary location from the fixture, no network
+make generate   # every location, with live data
 make icons      # contact sheet of every icon at its real sizes
 make test
 ```
 
-`make preview` also writes `out/dashboard.html`: a self-contained file (fonts
-in base64, SVG icons inline) that opens straight in a browser. That is the fast
+`make preview` also writes `out/dashboard-<id>.html`: a self-contained file
+(fonts in base64, SVG icons inline) that opens straight in a browser. That is the fast
 way to iterate on the design — edit the CSS, reload, no rendering step.
 
 The fixtures in `tests/fixtures/` are real Open-Meteo responses, so previews
@@ -81,9 +115,11 @@ and tests are reproducible and never touch the network.
 | `src/k4weather/astro.py` | moon phase, compass rose |
 | `src/k4weather/render.py` | Jinja template → HTML → Chromium screenshot |
 | `src/k4weather/postprocess.py` | conversion and validation for `eips` |
+| `src/k4weather/manifest.py` | the list published beside the images |
 | `src/k4weather/templates/` | HTML, CSS, SVG icons, Inter fonts |
-| `kindle/local/` | what runs on the device: download, sensor, drawing |
+| `kindle/local/` | what runs on the device: download, switching, sensor, drawing |
 | `kindle/extensions/` | KUAL menu, to start the panel from the Kindle itself |
+| `kindle/tools/keytest.sh` | button diagnostics, run on the device |
 | `kindle/install.sh` | installs the runtime on the Kindle, configured |
 
 The API payloads are treated as untrusted: every series is read through a
@@ -149,9 +185,9 @@ Step by step in [`docs/setup.md`](docs/setup.md); the shape of it:
    inactivity: commits made with the automatic token do not count as activity.
 4. **Kindle** — [`kindle/README.md`](kindle/README.md).
 
-The Kindle reads `dev-whiterice.github.io/k4-weather/dashboard.png` from Pages
-and not from `raw.githubusercontent.com`, the source the kindle-dash example
-uses: raw's anti-scraping limit follows the IP address and answers 429 once it
+The Kindle reads `dev-whiterice.github.io/k4-weather/locations.txt` from Pages,
+and then the image file names that list gives it — not from
+`raw.githubusercontent.com`, the source the kindle-dash example uses: raw's anti-scraping limit follows the IP address and answers 429 once it
 trips, taking the panel down with it. The workflow can publish to a different
 repository too, through the `PUBLISH_REPO` variable, in case the code ever goes
 private again.
@@ -161,8 +197,10 @@ private again.
 - [x] Phase 1 — fixed location in `config.yaml`
 - [x] Indoor temperature from the Kindle's own sensor, overlaid client side
       with `fbink` — see [`kindle/README.md`](kindle/README.md)
-- [ ] Phase 2 — dynamic location (several locations, search by name through
-      Open-Meteo geocoding, selection from a secret)
+- [x] Phase 2 — several locations, chosen on the device with the page buttons
+      — see [`kindle/README.md`](kindle/README.md#switching-locations)
+- [ ] Search by name through Open-Meteo geocoding, instead of coordinates
+      written into `config.yaml` by hand
 - [ ] Kindle battery level on screen, through the same overlay
 - [ ] Fallback image with an explicit banner when the API does not answer
 

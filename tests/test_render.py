@@ -137,3 +137,50 @@ def test_final_png_is_valid_for_eips(tmp_path, html, cfg):
     # A 16-level gray PNG of this complexity stays well below 100 kB; blowing
     # past that means colour or noise crept back in.
     assert report.size_bytes < 100_000
+
+
+def test_every_configured_location_name_fits_beside_the_date(forecast, cfg):
+    """The header holds the place on the left and the date on the right.
+
+    They are the two ends of a flex row, so a name too long for the panel does
+    not wrap or clip: it pushes the date until the two touch, and the first
+    thing lost is the date. The check is against the real `config.yaml` because
+    that is where the risk is — the layout was designed around "Caoria" and
+    somebody will eventually add a name four times as long.
+    """
+    from playwright.sync_api import sync_playwright
+
+    from k4weather.config import load_config
+
+    configured = load_config("config.yaml").locations
+    now = datetime.fromisoformat(forecast["current"]["time"])
+    # The longest date the calendar produces, so the measurement is not flattered
+    # by whichever day the fixture happens to fall on.
+    longest_date = f"mercoledì 28 {max(model.MESI, key=len)}"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(
+                viewport={"width": cfg.display.width, "height": cfg.display.height}
+            ).new_page()
+
+            for location in configured:
+                d = build_dashboard(forecast, None, cfg, now=now, location=location)
+                d.date_long = longest_date
+                page.set_content(build_html(d, cfg), wait_until="load")
+                page.evaluate("() => document.fonts.ready")
+                measured = page.evaluate(
+                    """() => ({
+                        name: document.querySelector('.location').getBoundingClientRect(),
+                        date: document.querySelector('.date').getBoundingClientRect(),
+                        page: document.body.scrollWidth,
+                    })"""
+                )
+                # A gap, not merely an absence of overlap: two words that touch
+                # read as one, and there is no second line to fall onto.
+                gap = measured["date"]["x"] - measured["name"]["right"]
+                assert gap >= 16, f"{location.name}: only {gap:.0f}px before the date"
+                assert measured["page"] == cfg.display.width, location.name
+        finally:
+            browser.close()

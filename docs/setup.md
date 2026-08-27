@@ -144,9 +144,15 @@ from a doorway; without it that one number comes out small
 ./kindle/install.sh root@192.168.1.50    # Kindle reachable over Wi-Fi
 ```
 
-It downloads the runtime, applies our configuration, checks that the image is
-reachable, copies everything to the device and deliberately starts nothing. The
-same by hand, plus what to do when SSH times out with USBNetwork on:
+On Windows, the same from Git Bash, or `.\kindle\install.ps1` from PowerShell.
+If SSH over USB cannot be established there, `./kindle/install.sh --drive E:`
+writes to the Kindle mounted as a disk instead and needs no network at all:
+[`kindle/README.md`](../kindle/README.md#without-ssh-over-the-usb-disk).
+
+It downloads the runtime, applies our configuration, normalises the line
+endings, checks that the image is reachable, copies everything to the device
+and deliberately starts nothing. The same by hand, plus what to do when SSH
+times out with USBNetwork on:
 [`kindle/README.md`](../kindle/README.md#installation).
 
 Do not make `start.sh` your first move. Try the pieces one at a time — the
@@ -164,6 +170,10 @@ power first because the keypad on a Kindle 4 cannot wake the device, which is a
 property of the driver and not a setting:
 [`kindle/README.md`](../kindle/README.md#switching-locations).
 
+If the buttons do nothing, do not guess: **KUAL > k4-weather > *Meteo: prova i
+tasti pagina*** runs the real listening window for twenty seconds and says which
+of the four possible faults it is.
+
 ---
 
 ## If something goes wrong
@@ -180,7 +190,9 @@ property of the driver and not a setting:
 | The indoor temperature lands off its blank | Move it with `INDOOR_TEMP_X/Y`, in pixels, and `INDOOR_SLOT_X/Y` in `model.py` by the same amount — or the dash underneath stays where it was |
 | The indoor temperature is drawn small | `fbink` is not on the device, or not executable: `local/draw.sh` fell back to `eips`. See [`kindle/README.md`](../kindle/README.md#how-the-number-gets-on-screen) |
 | The indoor temperature reads too high | Normal before calibration: it is the battery, not the room. See [`kindle/README.md`](../kindle/README.md#calibrating-the-offset) |
-| The page buttons do nothing | Press **power** first: the keypad on a Kindle 4 cannot wake the device. If they do nothing while it is awake, `INTERACT=false` in `env.sh`, or the codes in `KEY_NEXT`/`KEY_PREV` are not what this device sends — `kindle/tools/keytest.sh keys` says what it sends |
+| The KUAL entry starts nothing | Since the panel is launched detached, a failed start now says so on the screen and puts the tail of `dash.log` into `extensions/k4weather/kual.log`. If it does not even get that far, the installation was copied with **CRLF line endings** — see the row below |
+| Installed from Windows, and nothing works | busybox `ash` reads a carriage return as part of the value before it, so `DASH_DIR` names a directory that does not exist and `INTERACT` is not equal to `true`. *Meteo: diagnostica* names the files; *Meteo: avvia il pannello* repairs them; `make lineendings` then reinstalling fixes it at the source |
+| The page buttons do nothing | Press **power** first: the keypad on a Kindle 4 cannot wake the device. Then **KUAL > k4-weather > *Meteo: prova i tasti pagina***, which runs the real listening window and distinguishes the four causes: nothing read at all, codes this device sends that `KEY_NEXT`/`KEY_PREV` do not list, one location in the cache, or `INTERACT` not equal to `true`. `logs/dash.log` carries the same lines |
 | A location is skipped by the buttons | Its image never downloaded, so it is not in the cycle: check `cache/` on the device and the Pages site for `dashboard-<id>.png`. CI publishes nothing for a location whose data did not arrive, and says so in the run log |
 | One location shows an old time, the others are current | Open-Meteo did not answer for that one. The device kept the cached copy on purpose; the next run usually fixes it |
 | The panel sleeps and only power wakes it | An RTC alarm left armed after a wake-up by hand. `local/suspend.sh` clears it before arming its own — check `logs/dash.log` for `RTC still reads` |

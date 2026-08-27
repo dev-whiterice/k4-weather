@@ -52,9 +52,15 @@ export INTERACT_FLASH=${INTERACT_FLASH:-true}
 #   109  page back, right side         193  page back, left side
 #
 # Both sides are accepted for each direction, so the panel answers whichever
-# thumb is on it. event0 is "tequila-keypad"; the 5-way is event1 (105 left,
-# 106 right) if you would rather use that.
-export KEY_DEVICE=${KEY_DEVICE:-/dev/input/event0}
+# thumb is on it. On this device the keypad is event0 ("tequila-keypad") and
+# the 5-way is event1 (105 left, 106 right).
+#
+# `auto` listens on every readable /dev/input/event*, which is the default
+# because the alternative fails in the worst possible way: name the wrong
+# device and there are no events, no error and no way to tell from the panel
+# that anything is wrong. Naming one — `/dev/input/event0`, or a space
+# separated list — still works and saves a couple of processes per window.
+export KEY_DEVICE=${KEY_DEVICE:-auto}
 export KEY_NEXT=${KEY_NEXT:-"191 104"}
 export KEY_PREV=${KEY_PREV:-"109 193"}
 
@@ -91,14 +97,37 @@ export INDOOR_TEMP_UNIT=${INDOOR_TEMP_UNIT:-F}
 export INDOOR_TEMP_MIN=${INDOOR_TEMP_MIN:--10}
 export INDOOR_TEMP_MAX=${INDOOR_TEMP_MAX:-50}
 
-# What draws the number. `eips` has exactly one font size, 12x20 px per
-# character, which is too small to read a room temperature from a doorway:
-# fbink draws the same string in the same place with its bitmap font enlarged
-# INDOOR_TEMP_SCALE times, 32x64 px per character at 4. It is a static binary
-# that is not part of the device — put it in /mnt/us/dashboard/fbink and it is
-# used, leave it out and local/draw.sh falls back to eips. See kindle/README.md.
+# What draws the number, and the reason there is anything to configure here at
+# all. `eips` has exactly one font size, 12x20 px per character, which beside
+# the 26px figures across the rule reads as a footnote. fbink can draw the same
+# string in the same place either in the page's own font — see INDOOR_TEMP_TTF
+# below, and that is what makes the reading look like a temperature among
+# temperatures — or in its own bitmap face.
+#
+# It is a binary that is not part of the device. install.sh fetches it from
+# KOReader, whose Kindle build is the only published one that runs here; drop
+# your own in /mnt/us/dashboard/fbink and that is used instead. Leave it out
+# altogether and local/draw.sh falls back to eips. See kindle/README.md.
 export INDOOR_TEMP_FBINK=${INDOOR_TEMP_FBINK:-/mnt/us/dashboard/fbink}
-export INDOOR_TEMP_SCALE=${INDOOR_TEMP_SCALE:-4}
+
+# The page's own font, subset to the characters a temperature can use and with
+# its OpenType features frozen in, because fbink applies none. With this the
+# reading looks like the figures beside it; without it fbink falls back to its
+# bitmap face, and without fbink to eips. Built by tools/indoor_font.py.
+export INDOOR_TEMP_TTF=${INDOOR_TEMP_TTF:-/mnt/us/dashboard/fonts/indoor.ttf}
+
+# fbink's rendering size in pixels, which is NOT the CSS one: fbink scales the
+# font so that ascent-to-descent measures this, a browser scales the em square,
+# and Inter's ascent-to-descent is 1.21 em. 30 here is 25px of stylesheet.
+export INDOOR_TEMP_PX=${INDOOR_TEMP_PX:-30}
+# What one character advances at that size, in whole pixels. Every character in
+# indoor.ttf is this wide — frozen tabular figures — so the value is
+# right-aligned by arithmetic instead of by padding.
+export INDOOR_TEMP_ADVANCE=${INDOOR_TEMP_ADVANCE:-16}
+
+# How much fbink enlarges its bitmap face, for the fallback: 2 puts a character
+# at 16x32 px, so three of them fill the same 48x32 box.
+export INDOOR_TEMP_SCALE=${INDOOR_TEMP_SCALE:-2}
 
 # Where it goes: the top left corner of the blank, in pixels of the image, and
 # how many characters wide that blank is (three, for readings down to -10).
@@ -106,5 +135,5 @@ export INDOOR_TEMP_SCALE=${INDOOR_TEMP_SCALE:-4}
 # src/k4weather/model.py, which is where the layout leaves the hole. The eips
 # fallback derives its own cell coordinates from these four numbers.
 export INDOOR_TEMP_X=${INDOOR_TEMP_X:-468}
-export INDOOR_TEMP_Y=${INDOOR_TEMP_Y:-118}
+export INDOOR_TEMP_Y=${INDOOR_TEMP_Y:-134}
 export INDOOR_TEMP_CHARS=${INDOOR_TEMP_CHARS:-3}

@@ -262,11 +262,15 @@ cmd_probe() {
   # through the same path a real capture takes.
   printf '\000\000\000\000\000\000\000\000\001\000\150\000\001\000\000\000' \
     > "$TMP.selftest"
-  expected="    EV_KEY   code=104  PAGEUP    press"
+  # Built with the same printf and the same keyname the decoder uses, rather
+  # than written out again: spelled out by hand it was wrong — it said PAGEUP
+  # where `keyname` says FWD-L — so the self-test reported a failure on every
+  # device it has ever run on, which is worse than having no self-test at all.
+  expected=$(printf '    EV_KEY   code=%-4s %-9s %s' 104 "$(keyname 104)" press)
   actual=$(decode "$TMP.selftest" | head -n1)
   rm -f "$TMP.selftest"
   if [ "$actual" = "$expected" ]; then
-    echo "  ok: a synthetic PAGEUP press decodes correctly"
+    echo "  ok: a synthetic page-forward press decodes correctly"
   else
     echo "  FAILED. Expected:"
     echo "  |$expected|"

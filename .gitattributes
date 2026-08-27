@@ -1,0 +1,55 @@
+# Line endings, and why this file is the first fix in the repository.
+#
+# Everything under kindle/ ends up on a Kindle 4, where the shell is busybox
+# `ash`. That shell does not treat a carriage return as whitespace: it is an
+# ordinary character, part of whatever token it happens to end. A checkout that
+# turned LF into CRLF therefore ships scripts in which
+#
+#     DASH_DIR=${DASH_DIR:-/mnt/us/dashboard}
+#
+# assigns "/mnt/us/dashboard\r" — a directory that does not exist — and
+#
+#     export INTERACT=${INTERACT:-true}
+#
+# assigns "true\r", which is not equal to "true", so every feature guarded by
+# that comparison silently turns itself off. Both failures are invisible on a
+# device with no terminal: the panel simply does not start, and the page
+# buttons simply do nothing.
+#
+# Git for Windows enables core.autocrlf=true by default, so a clone on Windows
+# does exactly that unless it is told otherwise. This file tells it otherwise,
+# for every contributor and on every platform, and it overrides core.autocrlf.
+#
+# `text=auto eol=lf`: normalise to LF in the repository AND check out LF in the
+# working tree. Not `text=auto` alone — that would still hand Windows a CRLF
+# working tree, which is the half that reaches the Kindle.
+
+* text=auto eol=lf
+
+# Named explicitly rather than left to the auto-detection: these are the files
+# whose line endings are load-bearing, and "auto" is a guess about content.
+*.sh      text eol=lf
+*.py      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.json    text eol=lf
+*.xml     text eol=lf
+*.j2      text eol=lf
+*.css     text eol=lf
+*.svg     text eol=lf
+*.md      text eol=lf
+*.txt     text eol=lf
+*.toml    text eol=lf
+Makefile  text eol=lf
+LICENSE   text eol=lf
+
+# The one exception. PowerShell is the Windows-side entry point and is never
+# copied to the Kindle; some PowerShell hosts still dislike bare LF.
+*.ps1     text eol=crlf
+
+# Binary, so Git never touches them. Without these, `text=auto` guessing wrong
+# about a PNG or a font would corrupt it on checkout.
+*.png     binary
+*.woff2   binary
+*.ico     binary
+*.jpg     binary

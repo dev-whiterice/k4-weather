@@ -199,17 +199,24 @@ svg {
 
 .indoor-slot {
   /* Width reserved for the degree sign, which hangs off the right edge of the
-     hole: declared once, because the label is flush with its far side. */
-  --deg: 14px;
+     hole: declared once, because the label is flush with its far side. The
+     degree glyph of Inter SemiBold advances 0.458 em, which is 11.5px at the
+     size below. */
+  --deg: 12px;
 
   position: absolute;
   display: flex;
   align-items: center;
-  /* Right-aligned against the degree sign: the Kindle pads the value with
-     blanks, so two and three digits both end in the same place. */
+  /* Right-aligned against the degree sign: the device right-aligns the value
+     inside the hole, so two and three digits both end in the same place. */
   justify-content: flex-end;
-  /* Only the dash is drawn from here, and it stands in for digits 48px tall. */
-  font-size: 45px;
+  /* The size the device draws at, so the dash that stands in for the reading
+     is the size of the reading. 25px rather than the 26px of the figures
+     across the rule: fbink sizes text by ascent-to-descent rather than by the
+     em square, and 25.6px is the closest whole number of its pixels to 26 of
+     ours. Half a pixel, and it keeps the arithmetic on the device in whole
+     numbers. See `local/draw.sh`. */
+  font-size: 25px;
   font-weight: 600;
   line-height: 1;
   color: var(--ink);
@@ -223,7 +230,7 @@ svg {
   right: calc(100% + 24px);
   /* 68px is the top of the band's content box; the slot starts at
      INDOOR_SLOT_Y, so this offset is 68 - that. */
-  top: -50px;
+  top: -66px;
   width: 1px;
   height: 158px;
   background: var(--rule);
@@ -241,12 +248,18 @@ svg {
 /* Sized and placed against the bitmap digits it sits next to, not against the
    rest of the page: it hangs at the top of the cell, where a degree sign
    belongs, rather than in the middle of a box 48px tall. */
+/* Same size as the digits it follows, and on their baseline: across the rule
+   the degree sign is simply part of the figure's own text, and this one has to
+   read as the same thing even though a different program draws what precedes
+   it. `top` places the line box so that the two baselines meet — the device
+   puts its baseline at 24px below the top of the slot, which is where a 25px
+   line box starting 1px down puts its own. */
 .indoor-deg {
   position: absolute;
   left: 100%;
-  top: 7px;
+  top: 1px;
   width: var(--deg);
-  font-size: 40px;
+  font-size: 25px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.03em;

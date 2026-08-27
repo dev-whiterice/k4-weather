@@ -15,6 +15,7 @@ from the environment: that is what makes them runnable here.
 import json
 import os
 import re
+import shutil
 import signal
 import struct
 import subprocess
@@ -32,6 +33,30 @@ INDOOR_TEMP = str(KINDLE / "indoor-temp.sh")
 DRAW = str(KINDLE / "draw.sh")
 
 EXTENSION = KINDLE.parent / "extensions" / "k4weather"
+
+# Windows has no execute bit, so `st_mode & 0o111` there says nothing at all:
+# NTFS reports 0o666 for every file Git checks out, executable or not. What is
+# actually shared between contributors — and what a `git clone` on macOS turns
+# into a real execute bit — is the mode Git records in the index, so that is
+# what gets asked. The filesystem is the fallback, for a source tree that is
+# not a checkout.
+WINDOWS = os.name == "nt"
+
+
+def _is_executable(path: Path) -> bool:
+    if not WINDOWS:
+        return bool(path.stat().st_mode & 0o111)
+    if shutil.which("git") is None:
+        return True  # nothing to check against; not worth a false failure
+    done = subprocess.run(
+        ["git", "ls-files", "-s", "--", str(path)],
+        capture_output=True,
+        text=True,
+        cwd=path.parent,
+    )
+    if done.returncode != 0 or not done.stdout.strip():
+        return True
+    return done.stdout.split()[0] == "100755"
 
 
 def _env_default(name: str) -> str:
@@ -157,10 +182,16 @@ def fbink(tmp_path):
     return _recorder(tmp_path, "fbink")
 
 
-def _draw(eips, image="/tmp/dash.png", fbink=None, **env) -> None:
-    # Never left to the default: on a device — or on a machine where the binary
-    # has been dropped into kindle/ ready to be installed — draw.sh would find
-    # the real fbink and these tests would be measuring it.
+INDOOR_TTF = KINDLE.parent / "fonts" / "indoor.ttf"
+
+
+def _draw(eips, image="/tmp/dash.png", fbink=None, ttf=False, **env) -> None:
+    # Neither is ever left to its default. draw.sh picks the first of three
+    # renderers that is actually present, so a test that does not say which are
+    # present is not testing the one it thinks it is: on a machine where fbink
+    # has been dropped into kindle/ ready to install, or simply where
+    # kindle/fonts/indoor.ttf is checked out — which it always is — the default
+    # would silently select a different branch.
     _run(
         DRAW,
         "-f",
@@ -168,8 +199,54 @@ def _draw(eips, image="/tmp/dash.png", fbink=None, **env) -> None:
         image,
         EIPS=eips.path,
         INDOOR_TEMP_FBINK=fbink.path if fbink else "/nonexistent/fbink",
+        INDOOR_TEMP_TTF=str(INDOOR_TTF) if ttf else "/nonexistent/indoor.ttf",
         **env,
     )
+
+
+@pytest.mark.parametrize(
+    "reading,unit,drawn",
+    [
+        # Padded to the width of the box, which is what right-aligns it: every
+        # character of indoor.ttf advances the same width, the blank included,
+        # so two digits and three end in the same place. It is also what covers
+        # the dash the image carries for a sensor that cannot be read.
+        ("73 Fahrenheit", "F", " 23"),
+        ("8", "C", "  8"),
+        ("-5", "C", " -5"),
+        ("14 Fahrenheit", "F", "-10"),
+    ],
+)
+def test_fbink_draws_the_value_in_the_page_font_when_the_font_is_there(
+    eips, fbink, reading, unit, drawn
+):
+    """The first choice, and the only one that looks like the rest of the page.
+
+    fbink takes margins, not coordinates, so every number here is derived from
+    the slot: `top` and `left` are its own corner, `bottom` and `right` are
+    what is left of the 600x800 panel beyond it. Bounding the drawing area to
+    the slot is what stops a wide reading from spilling over the rule beside it.
+    """
+    _draw(eips, fbink=fbink, ttf=True, INDOOR_TEMP_CMD=f"echo {reading}", INDOOR_TEMP_UNIT=unit)
+
+    slot = model.indoor_slot()
+    assert eips() == ["-f -g /tmp/dash.png"]
+    assert fbink() == [
+        f"-q -t regular={INDOOR_TTF},px=30,top={slot.y},"
+        f"bottom={800 - slot.y - slot.height},left={slot.x},"
+        f"right={600 - slot.x - slot.width},padding=BOTH -- {drawn}"
+    ]
+
+
+def test_a_missing_font_falls_back_to_the_bitmap_face(eips, fbink):
+    # An installation from before the font existed, or one where the copy did
+    # not arrive: still legible, just visibly another program's work.
+    _draw(eips, fbink=fbink, ttf=False, INDOOR_TEMP_CMD="echo 21", INDOOR_TEMP_UNIT="C")
+
+    assert fbink() == [
+        f"-q -F IBM -S {model.INDOOR_SCALE} -x 0 -y 0 "
+        f"-X {model.INDOOR_SLOT_X} -Y {model.INDOOR_SLOT_Y} -- {' 21'}"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -185,7 +262,7 @@ def _draw(eips, image="/tmp/dash.png", fbink=None, **env) -> None:
     ],
 )
 def test_fbink_draws_the_value_right_aligned_in_its_slot(eips, fbink, reading, unit, drawn):
-    _draw(eips, fbink=fbink, INDOOR_TEMP_CMD=f"echo {reading}", INDOOR_TEMP_UNIT=unit)
+    _draw(eips, fbink=fbink, ttf=False, INDOOR_TEMP_CMD=f"echo {reading}", INDOOR_TEMP_UNIT=unit)
 
     assert eips() == ["-f -g /tmp/dash.png"]
     assert fbink() == [
@@ -197,13 +274,13 @@ def test_fbink_draws_the_value_right_aligned_in_its_slot(eips, fbink, reading, u
 @pytest.mark.parametrize(
     "reading,unit,drawn",
     [
-        ("73 Fahrenheit", "F", "      23"),
-        ("8", "C", "       8"),
+        ("73 Fahrenheit", "F", "  23"),
+        ("8", "C", "   8"),
         # Without that leading blank eips would read a temperature below zero as
         # one of its own options, which is why the value is padded to the full
         # width of the hole and not merely aligned in it.
-        ("-5", "C", "      -5"),
-        ("14 Fahrenheit", "F", "     -10"),
+        ("-5", "C", "  -5"),
+        ("14 Fahrenheit", "F", " -10"),
     ],
 )
 def test_eips_draws_the_value_in_the_same_hole_when_fbink_is_missing(
@@ -307,7 +384,34 @@ def test_every_menu_entry_points_at_a_script_that_is_there():
         # No longer what makes the entry work — the interpreter is named above
         # — but the scripts are run by hand over SSH too, and install.sh chmods
         # them on arrival. A file not executable here is not worth chmoding.
-        assert here.stat().st_mode & 0o111, f"{script} is not executable"
+        assert _is_executable(here), (
+            f"{script} is not executable (git mode is not 100755)"
+        )
+
+
+@pytest.mark.parametrize(
+    "script",
+    sorted((EXTENSION / "bin").glob("*.sh")) + sorted(KINDLE.glob("*.sh")),
+    ids=lambda p: p.name,
+)
+def test_no_device_script_has_carriage_returns(script):
+    """The one thing a Windows checkout gets wrong, and the worst one.
+
+    busybox `ash` does not treat a carriage return as whitespace: it is an
+    ordinary character and it ends up inside the value of whatever assignment
+    it terminates. `DASH_DIR=${DASH_DIR:-/mnt/us/dashboard}` then names a
+    directory that does not exist, and `INTERACT=${INTERACT:-true}` holds
+    something that is not equal to `true`, so the page buttons quietly stop
+    being read. Neither failure says anything on a device with no terminal.
+
+    The .gitattributes at the root of the repository is what prevents this,
+    and this is what notices if it ever stops working — including for a
+    contributor whose editor decides to be helpful.
+    """
+    assert b"\r" not in script.read_bytes(), (
+        f"{script.name} has CRLF line endings. Run 'make lineendings' (or "
+        "'git add --renormalize .') — this file cannot run on the Kindle."
+    )
 
 
 @pytest.mark.parametrize(
@@ -573,7 +677,7 @@ def test_turning_the_feature_off_gives_back_a_plain_sleep(device, tmp_path):
 @pytest.mark.parametrize(
     "variable,script,fallback",
     [
-        ("KEY_DEVICE", INTERACT, "/dev/input/event0"),
+        ("KEY_DEVICE", INTERACT, "auto"),
         ("KEY_NEXT", INTERACT, "191 104"),
         ("KEY_PREV", INTERACT, "109 193"),
         ("INTERACT_EXTEND", INTERACT, "15"),
@@ -620,6 +724,15 @@ def origin(tmp_path):
     fake = tmp_path / "xh"
     fake.write_text(
         f'''#!/bin/sh
+# The first thing it does, because it is the first thing the real one does.
+#
+# xh follows httpie: standard input that is not a terminal is the body of the
+# request, so it reads stdin to the end whether or not anything is there. A
+# stub that skipped this was the reason the suite passed for a version of
+# fetch-dashboard.sh that downloaded exactly one location out of five on the
+# device — the loop walking the manifest had the manifest as its stdin, and xh
+# ate it. Faithfulness here is not pedantry: it is the whole test.
+cat > /dev/null
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out=$2; shift 2 ;;
@@ -747,6 +860,11 @@ def test_the_state_follows_the_image_that_was_actually_handed_over(
     assert device.stored() == "caoria"
 
 
+@pytest.mark.skipif(
+    WINDOWS,
+    reason="POSIX process groups: os.killpg does not exist on Windows, and the "
+    "MSYS shell this would signal is not the shell that runs on the Kindle",
+)
 def test_ctrl_c_during_the_window_still_stops_the_panel(device, tmp_path):
     """The ten-second window is the documented way to interrupt the loop.
 

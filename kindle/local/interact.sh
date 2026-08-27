@@ -16,6 +16,11 @@
 # device below the evdev layer; the buttons are perfectly readable a moment
 # later, with the framework down. Hence: power to wake, page buttons to choose.
 # `kindle/tools/keytest.sh` is what measured all of that.
+#
+# Everything here says what it did, on stdout, which dash.sh sends to
+# logs/dash.log. Not for the sake of a log: a panel whose buttons do nothing is
+# indistinguishable from a panel that never listened, and from out here the two
+# have completely different causes. The lines below are what tells them apart.
 
 DIR=$(dirname "$0")
 DASH_DIR=${DASH_DIR:-$(cd "$DIR/.." && pwd)}
@@ -26,18 +31,29 @@ SECONDS_TO_LISTEN=${1:-10}
 FLASH=false
 [ "${2:-}" = "--flash" ] && FLASH=true
 
+log() { echo "$(date) interact: $*"; }
+
 # Off: behave exactly like the `sleep` this replaced. Not a no-op — that window
 # is the only chance to interrupt the loop by hand before it suspends.
 if [ "${INTERACT:-true}" != true ]; then
+  log "INTERACT is '${INTERACT:-true}', not 'true': plain ${SECONDS_TO_LISTEN}s sleep"
   sleep "$SECONDS_TO_LISTEN"
   exit 0
 fi
 
-KEY_DEVICE=${KEY_DEVICE:-/dev/input/event0}
+# `auto` means every input device the kernel offers, which is what makes this
+# survive a device that numbers its keypad differently: the buttons are found
+# by listening rather than by being told where to listen. Naming one device
+# explicitly still works and is marginally cheaper — see env.sh.
+KEY_DEVICE=${KEY_DEVICE:-auto}
 KEY_NEXT=${KEY_NEXT:-"191 104"}
 KEY_PREV=${KEY_PREV:-"109 193"}
 INTERACT_EXTEND=${INTERACT_EXTEND:-15}
 CAPTURE=${CAPTURE:-/tmp/k4weather-keys.bin}
+
+# Unread events per device per second above which the backlog is a stream and
+# not a person. See the loop below.
+MAX_BACKLOG=${MAX_BACKLOG:-200}
 
 EVENT_SIZE=16       # struct input_event on this 32-bit kernel
 OFF_TYPE=8          # only the low byte of each field is read: key types,
@@ -108,21 +124,63 @@ in_list() {
   return 1
 }
 
-# ------------------------------------------------------------------ the loop
+# ------------------------------------------------------------- the listeners
+#
+# One reader per device, open for the whole window. Polling `dd` per press
+# would leave gaps between the polls, and a press that lands in a gap is a
+# button that did not work — the one failure a wall panel must not have.
+#
+# Several devices rather than one because the alternative failed silently: a
+# keypad that is not on the device named in env.sh produces no events, no
+# error, and a panel whose buttons do nothing for a reason nobody can see from
+# here. Reading them all costs a handful of `dd` processes for the length of
+# the window and takes that whole class of fault off the table.
 
 init_bytes
-rm -f "$CAPTURE"
-: > "$CAPTURE"
 
-# One reader, open for the whole window. Polling `dd` per press would leave
-# gaps between the polls, and a press that lands in a gap is a button that did
-# not work — the one failure a wall panel must not have.
-dd if="$KEY_DEVICE" of="$CAPTURE" bs="$EVENT_SIZE" 2>/dev/null &
-reader=$!
+devices=""
+if [ "$KEY_DEVICE" = auto ]; then
+  for _dev in /dev/input/event*; do
+    [ -r "$_dev" ] && devices="$devices $_dev"
+  done
+else
+  for _dev in $KEY_DEVICE; do
+    [ -r "$_dev" ] && devices="$devices $_dev"
+  done
+fi
 
-# The reader is killed on every exit path: leaving it holding the input device
-# across a suspend would keep a `dd` alive for as long as the panel runs.
-cleanup() { kill "$reader" 2>/dev/null; }
+if [ -z "$devices" ]; then
+  # Nothing to listen to. Said out loud rather than waited out in silence:
+  # this is the state in which the buttons cannot possibly work, and it is
+  # invisible from the device itself.
+  log "no readable input device (KEY_DEVICE='$KEY_DEVICE'), waiting ${SECONDS_TO_LISTEN}s"
+  sleep "$SECONDS_TO_LISTEN"
+  exit 0
+fi
+
+readers=""
+slots=0
+for _dev in $devices; do
+  _cap="$CAPTURE.$slots"
+  rm -f "$_cap"
+  : > "$_cap"
+  dd if="$_dev" of="$_cap" bs="$EVENT_SIZE" 2>/dev/null &
+  readers="$readers $!"
+  # POSIX sh has no arrays, and this needs one entry per device: the capture
+  # file and how far it has been decoded. `eval` with a numbered name is the
+  # form that works in busybox ash.
+  eval "cap_$slots=\$_cap"
+  eval "seen_$slots=0"
+  slots=$((slots + 1))
+done
+
+# The readers are killed on every exit path: leaving one holding an input
+# device across a suspend would keep a `dd` alive for as long as the panel runs.
+cleanup() {
+  for _pid in $readers; do
+    kill "$_pid" 2>/dev/null
+  done
+}
 trap cleanup EXIT
 
 # A signal must still kill this script, and be seen to have killed it. A trap
@@ -139,6 +197,8 @@ trap 'cleanup; trap - TERM; kill -TERM $$' TERM
 
 current=$(loc_current) || current=""
 
+log "window ${SECONDS_TO_LISTEN}s, ${slots} device(s):${devices}, showing '${current:-none}' of $(loc_count) location(s)"
+
 # A full refresh on arrival says "awake and listening" without drawing any
 # chrome that would then have to be cleaned off the image. Only after a wake by
 # hand: a scheduled refresh has just painted the screen anyway.
@@ -146,45 +206,114 @@ if [ "$FLASH" = true ] && [ -n "$current" ] && [ "${INTERACT_FLASH:-true}" = tru
   loc_draw "$current"
 fi
 
-seen=0
 deadline=$(( $(date +%s) + SECONDS_TO_LISTEN ))
+events=0
+moves=0
 
 # kindle-dash's stop.sh is `pkill -f dash.sh`, which reaches the loop and not
 # this child of it. Without the check below, stopping the panel during the
 # listening window would leave one of these counting down on its own, holding
 # the input device — and redrawing the screen behind the framework that was
 # just brought back.
+#
+# Watched only if watching works. `$PPID` is not always a process this shell
+# can signal — it is not when the script is started by something that is not
+# itself a process the shell can see, which is how it is run off the device —
+# and a liveness test that answers "dead" on its first call would close every
+# window one second after opening it. Asking once, up front, is the difference
+# between a guard and a bug.
 parent=$PPID
+watch_parent=false
+kill -0 "$parent" 2>/dev/null && watch_parent=true
 
-while [ "$(date +%s)" -lt "$deadline" ]; do
-  sleep 1
-  kill -0 "$parent" 2>/dev/null || break
+# Everything the readers have produced since the last look, answered. A
+# function rather than the body of the loop because it is needed twice: once
+# per second while the window is open, and once more after it closes. A press
+# that lands in the last second is a press, and dropping it made the panel feel
+# unreliable in exactly the moment somebody is still deciding whether it works.
+#
+# Not called in a subshell anywhere: it updates `current`, `deadline`, `events`
+# and `moves` in the caller, which is this script.
+drain() {
+  slot=0
+  while [ "$slot" -lt "$slots" ]; do
+    eval "cap=\$cap_$slot"
+    eval "seen=\$seen_$slot"
 
-  total=$(records_in "$CAPTURE")
-  while [ "$seen" -lt "$total" ]; do
-    code=$(press_code "$CAPTURE" "$seen")
-    seen=$((seen + 1))
-    [ -n "$code" ] || continue
+    total=$(records_in "$cap")
 
-    if in_list "$code" "$KEY_NEXT"; then
-      step=1
-    elif in_list "$code" "$KEY_PREV"; then
-      step=-1
-    else
-      continue    # every other button on the device is not ours to answer
+    # A safety valve, and the price of listening to every device rather than to
+    # one that was measured. Decoding a record costs three `dd` forks, so a
+    # device that streams — anything that is not a keypad — would spend the
+    # whole window being read and none of it answering buttons. A person
+    # produces four events per press; a backlog this size in one second is not
+    # a person, so it is dropped rather than worked through.
+    if [ $((total - seen)) -gt "$MAX_BACKLOG" ]; then
+      log "$cap produced $((total - seen)) events in a second: not a keypad, skipping"
+      seen=$total
     fi
 
-    [ -n "$current" ] || current=$(loc_current) || continue
-    target=$(loc_step "$current" "$step") || continue
-    [ "$target" = "$current" ] && continue
+    while [ "$seen" -lt "$total" ]; do
+      code=$(press_code "$cap" "$seen")
+      seen=$((seen + 1))
+      [ -n "$code" ] || continue
+      events=$((events + 1))
 
-    if loc_go "$target"; then
-      current=$target
-      # Each press buys more time: walking five locations must not need five
-      # presses inside the same shrinking window.
-      deadline=$(( $(date +%s) + INTERACT_EXTEND ))
-    fi
+      if in_list "$code" "$KEY_NEXT"; then
+        step=1
+      elif in_list "$code" "$KEY_PREV"; then
+        step=-1
+      else
+        # Every other button on the device is not ours to answer. Logged all
+        # the same: when the page buttons turn out to send codes this device
+        # was never told about, this line is the whole diagnosis.
+        log "key $code ignored (next='$KEY_NEXT' prev='$KEY_PREV')"
+        continue
+      fi
+
+      [ -n "$current" ] || current=$(loc_current) || continue
+      target=$(loc_step "$current" "$step") || continue
+      [ "$target" = "$current" ] && continue
+
+      if loc_go "$target"; then
+        log "key $code: $current -> $target"
+        current=$target
+        moves=$((moves + 1))
+        # Each press buys more time: walking five locations must not need five
+        # presses inside the same shrinking window.
+        deadline=$(( $(date +%s) + INTERACT_EXTEND ))
+      else
+        log "key $code: could not draw $target, staying on $current"
+      fi
+    done
+
+    eval "seen_$slot=\$seen"
+    slot=$((slot + 1))
   done
+}
+
+# The deadline is tested *after* the drain, not before it, and that ordering is
+# the whole point of writing the loop this way.
+#
+# A press extends the window, so a press and the deadline are in a race: read
+# the clock first and a button pushed in the last second is answered by a loop
+# that has already decided to stop, and the extension it bought is applied to a
+# window nobody is watching any more. Draining first means the window can only
+# close on a device that had nothing left to say.
+#
+# It also removes a race that only exists off the Kindle, where it is what the
+# test suite kept tripping over: the reader is a background process, and if it
+# has not produced its first block by the time the first second is up, a loop
+# that checks the clock first ends before it has ever looked.
+while :; do
+  sleep 1
+  if [ "$watch_parent" = true ] && ! kill -0 "$parent" 2>/dev/null; then
+    log "the panel loop is gone, closing the window"
+    break
+  fi
+  drain
+  [ "$(date +%s)" -lt "$deadline" ] || break
 done
 
+log "window closed: $events key press(es), $moves move(s)"
 exit 0

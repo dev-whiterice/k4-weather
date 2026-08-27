@@ -2,11 +2,23 @@ name: dashboard
 
 on:
   schedule:
-    # Every 30 minutes. The GitHub Actions cron is not punctual: at peak hours
-    # the delay reaches 15-20 minutes and the odd run is skipped. The Kindle
-    # wakes up offset by 15 minutes (see kindle/local/env.sh) and the image
-    # always carries its generation time.
-    - cron: "0,30 * * * *"
+    # Every 30 minutes, at :07 and :37 — and the odd minutes are the point.
+    #
+    # This used to say "0,30", and the runs it actually got were: 03:27, 22:23,
+    # 19:01, 16:54, 15:59, 14:11, 13:08, 11:58. Not every thirty minutes: every
+    # one to three hours, with most firings dropped outright and the survivors
+    # 20 to 30 minutes late. The panel then showed a generation time six hours
+    # old and looked broken while everything about it worked.
+    #
+    # The cause is that the top and the bottom of the hour are when everybody
+    # else's cron fires too. GitHub schedules scheduled workflows on spare
+    # capacity, delays them under load, and drops them when the queue is too
+    # long — and :00 and :30 are the two most contended minutes there are.
+    # Moving off them is the documented remedy and costs nothing.
+    #
+    # The Kindle wakes at :15 and :45 (see kindle/local/env.sh), which still
+    # leaves generation eight minutes of head start.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
   push:
     branches: [main]

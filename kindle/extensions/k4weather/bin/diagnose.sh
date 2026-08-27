@@ -45,7 +45,16 @@ echo "shell: $(readlink -f /bin/sh 2>/dev/null || echo /bin/sh)"
 # Whether /usr/bin/env exists decides whether a `#!/usr/bin/env sh` shebang
 # resolves at all, which is the quietest way for a script not to start.
 [ -e /usr/bin/env ] && echo "/usr/bin/env: presente" || echo "/usr/bin/env: ASSENTE"
-command -v setsid >/dev/null 2>&1 && echo "setsid: presente" || echo "setsid: assente (si usa nohup)"
+# Probed by running them, never with `command -v`: this device has no `command`
+# builtin, so that test answers "missing" for programs that are present — which
+# is how bin/start.sh came to pick a fallback that needed `nohup`, a program
+# this Kindle does not have either. Both lines below are the ones that decide
+# whether the panel can be started from the menu at all.
+setsid true 2>/dev/null && echo "setsid: presente" || echo "setsid: assente"
+nohup true 2>/dev/null >/dev/null && echo "nohup: presente" || echo "nohup: assente"
+echo "(nessuno dei due e' necessario: senza setsid si usa un subshell che"
+echo " ignora HUP, che non dipende da nessun programma esterno)"
+type command >/dev/null 2>&1 && echo "command: presente" || echo "command: ASSENTE (atteso su questo dispositivo)"
 
 section "il filesystem /mnt/us"
 # The execute bit on FAT comes from the mount options, not from the files. If
@@ -76,6 +85,56 @@ done
 [ -f "$DASH_DIR/fbink" ] \
   && echo "fbink: presente (temperatura interna grande)" \
   || echo "fbink: assente (temperatura interna disegnata da eips, piccola)"
+
+section "fine riga degli script (il CR e' un'installazione da Windows)"
+# The single most damaging thing that can be wrong with this installation, and
+# the least visible. busybox `ash` reads a carriage return as an ordinary
+# character, so a script installed with CRLF line endings assigns
+# "/mnt/us/dashboard<CR>" where it means "/mnt/us/dashboard" and "true<CR>"
+# where it means "true" — the panel then does not start and the page buttons do
+# nothing, both without a word. Named file by file, because "3 file" is a
+# puzzle and a list is an instruction.
+CR=$(printf '\r')
+dirty=0
+for f in "$EXT_DIR"/bin/*.sh "$DASH_DIR"/*.sh "$DASH_DIR"/local/*.sh; do
+  [ -f "$f" ] || continue
+  if grep -q "$CR" "$f" 2>/dev/null; then
+    echo "CRLF: $f"
+    dirty=$((dirty + 1))
+  fi
+done
+if [ "$dirty" -gt 0 ]; then
+  echo
+  echo "$dirty file con fine riga CRLF: NON possono funzionare su questo"
+  echo "dispositivo. La voce 'Meteo: avvia il pannello' li ripara da sola;"
+  echo "la correzione vera e' reinstallare da un checkout aggiornato del"
+  echo "repository, che contiene un .gitattributes che impedisce il problema."
+else
+  echo "tutti LF: corretto"
+fi
+
+section "impostazioni che decidono il cambio localita'"
+# Read out of the installed env.sh rather than assumed, because the whole point
+# of this section is the case where it does not say what somebody thinks it
+# says. Printed between brackets so a trailing carriage return is visible.
+if [ -f "$DASH_DIR/local/env.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$DASH_DIR/local/env.sh" 2>/dev/null
+  for v in INTERACT INTERACT_SECONDS INTERACT_EXTEND KEY_DEVICE KEY_NEXT KEY_PREV; do
+    eval "value=\${$v:-}"
+    echo "  $v = [$value]"
+  done
+else
+  echo "  local/env.sh non c'e'"
+fi
+
+section "dispositivi di input"
+# `auto` listens on all of them; anything else has to exist, and this is where
+# a KEY_DEVICE pointing at nothing becomes visible.
+ls -l /dev/input/event* 2>&1
+echo
+cat /proc/bus/input/devices 2>/dev/null | grep -i 'name=\|handlers=' || \
+  echo "  (/proc/bus/input/devices assente)"
 
 section "si riesce davvero a eseguire uno script?"
 # The question the rest of this file only circles around. A script written and
@@ -109,8 +168,19 @@ fi
 # The logs last, because they are the longest and the least often needed. The
 # KUAL one first: it is the only place the shell's own errors are written, and
 # the reason this file exists.
-section "/var/tmp/KUAL.log (errori delle voci di menu, ultime 40 righe)"
-tail -n 40 /var/tmp/KUAL.log 2>/dev/null || echo "(vuoto o assente: nessuna voce di menu ha mai fallito)"
+section "KUAL.log (errori delle voci di menu, ultime 40 righe)"
+# Two paths because KUAL has used both: /var/tmp on the older builds, and
+# /mnt/us/extensions on the ones that document it. Looking in only one of them
+# is how "the error is not lost, it is just somewhere nobody looks" turns into
+# "there is no error anywhere".
+kual_found=0
+for kual_log in /var/tmp/KUAL.log /mnt/us/extensions/KUAL.log; do
+  [ -s "$kual_log" ] || continue
+  kual_found=1
+  echo "--- $kual_log ---"
+  tail -n 40 "$kual_log" 2>/dev/null
+done
+[ "$kual_found" = 1 ] || echo "(vuoti o assenti: nessuna voce di menu ha mai fallito)"
 
 section "$EXT_DIR/kual.log (ultime 40 righe)"
 tail -n 40 "$EXT_DIR/kual.log" 2>/dev/null || echo "(assente)"

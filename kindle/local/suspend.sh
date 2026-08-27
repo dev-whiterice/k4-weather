@@ -57,6 +57,9 @@ arm_rtc() {
   echo -n "$1" > "$RTC"
 }
 
+log "suspending for ${remaining}s (INTERACT=${INTERACT:-true}," \
+    "window ${INTERACT_SECONDS}s, early-wake margin ${EARLY_WAKE_MARGIN}s)"
+
 while [ "$remaining" -ge "$MIN_SLEEP" ]; do
   arm_rtc "$remaining"
 
@@ -76,9 +79,22 @@ while [ "$remaining" -ge "$MIN_SLEEP" ]; do
 
   # Woken by hand — the power slider, since the keypad cannot wake this device.
   # The window that follows is the whole point of pressing it.
-  log "woken by hand after ${slept}s, ${remaining}s left"
+  log "woken by hand after ${slept}s (alarm was ${planned}s), ${remaining}s left"
+
+  # Timed rather than assumed: every press extends the window, so a session
+  # spent walking through five locations lasts far longer than
+  # INTERACT_SECONDS. Subtracting the nominal length instead of the real one
+  # would leave the next alarm armed for time that has already gone, and the
+  # scheduled refresh would land that much late.
+  w0=$(date +%s)
   "$DIR/interact.sh" "$INTERACT_SECONDS" --flash
-  remaining=$((remaining - INTERACT_SECONDS))
+  w1=$(date +%s)
+  window=$((w1 - w0))
+  [ "$window" -lt 0 ] && window=$INTERACT_SECONDS
+  remaining=$((remaining - window))
+  log "window lasted ${window}s, ${remaining}s left before the next refresh"
 done
+
+log "returning to the loop"
 
 exit 0

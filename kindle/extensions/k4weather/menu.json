@@ -13,14 +13,20 @@
       "exitmenu": true
     },
     {
-      "name": "Meteo: ferma e torna al lettore",
+      "name": "Meteo: prova i tasti pagina",
       "priority": 3,
+      "action": "/bin/sh /mnt/us/extensions/k4weather/bin/test-keys.sh",
+      "exitmenu": true
+    },
+    {
+      "name": "Meteo: ferma e torna al lettore",
+      "priority": 4,
       "action": "/bin/sh /mnt/us/extensions/k4weather/bin/stop.sh",
       "exitmenu": true
     },
     {
       "name": "Meteo: diagnostica",
-      "priority": 4,
+      "priority": 5,
       "action": "/bin/sh /mnt/us/extensions/k4weather/bin/diagnose.sh",
       "exitmenu": false,
       "status": false,

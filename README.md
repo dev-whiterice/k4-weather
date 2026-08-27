@@ -105,6 +105,46 @@ way to iterate on the design — edit the CSS, reload, no rendering step.
 The fixtures in `tests/fixtures/` are real Open-Meteo responses, so previews
 and tests are reproducible and never touch the network.
 
+### On Windows
+
+Everything above works from **Git Bash** (the shell that comes with Git for
+Windows); `make` comes from `winget install GnuWin32.Make` or Scoop. The
+Makefile finds the virtualenv under `.venv/Scripts` on its own, and the test
+suite skips the one case that needs POSIX process groups.
+
+To install on the Kindle from PowerShell, [`kindle/install.ps1`](kindle/install.ps1)
+finds Git Bash and hands over to `install.sh`; from Git Bash, run
+`./kindle/install.sh` directly as everywhere else.
+
+If the USB network link cannot be made to work — on Windows the Kindle presents
+a Linux RNDIS gadget that the system binds a serial driver to, and the clean fix
+needs an unsigned INF — there is a transport that needs no network at all:
+
+```sh
+./kindle/install.sh --drive E:      # the Kindle mounted as a USB disk
+```
+
+The KUAL menu then starts, tests and diagnoses the panel from the device.
+
+**One thing matters more than the rest.** The scripts under `kindle/` run on
+busybox `ash`, which does *not* treat a carriage return as whitespace — it is
+an ordinary character and it ends up inside the value of whatever assignment it
+terminates. A CRLF checkout therefore ships a `DASH_DIR` naming a directory
+that does not exist and an `INTERACT` that is not equal to `true`, and on a
+device with no terminal both faults look like nothing happening at all.
+
+The [`.gitattributes`](.gitattributes) at the root of the repository forces LF
+on every platform and overrides `core.autocrlf`, so a fresh clone is already
+right. A working tree cloned *before* it was added is not:
+
+```sh
+make lineendings      # git add --renormalize .
+```
+
+`tests/test_kindle.py` fails if a device script ever carries a CR again,
+`install.sh` strips them on the way to the Kindle, and the KUAL start entry
+repairs an installation that already has them.
+
 ### Layout
 
 | Path | Role |
@@ -121,6 +161,7 @@ and tests are reproducible and never touch the network.
 | `kindle/extensions/` | KUAL menu, to start the panel from the Kindle itself |
 | `kindle/tools/keytest.sh` | button diagnostics, run on the device |
 | `kindle/install.sh` | installs the runtime on the Kindle, configured |
+| `kindle/install.ps1` | the same, launched from PowerShell |
 
 The API payloads are treated as untrusted: every series is read through a
 bounds-checked helper, so a missing or truncated array degrades to a dash on

@@ -52,17 +52,22 @@ FBINK_CELL_HEIGHT = 16
 EIPS_CELL_WIDTH = 12
 EIPS_CELL_HEIGHT = 20
 
-# How much fbink enlarges its font. At 4 a character is 32x64 px, and the digits
-# inside it stand about 48 px tall: between the figures that qualify the
-# forecast (26 px of type on the other side of the rule) and the forecast itself
-# (96 px), which is the hierarchy the two readings deserve — the room is the
-# second thing you read from a doorway, not the first and not an afterthought.
-# A bitmap face also reads smaller than it measures, which is why 3 looked
-# slighter than the arithmetic said it would.
+# The reading is drawn to match the figures beside it — max, min and apparent
+# temperature, 26 px of Inter SemiBold on the other side of the rule — rather
+# than to stand apart from them. It is a temperature among temperatures, and
+# the label and the rule are what say where it comes from.
 #
-# Only whole numbers are available: fbink scales by integers, so this is a
-# choice between 24x48 and 32x64 px and not a dial.
-INDOOR_SCALE = 4
+# That is a change of mind. The slot used to be twice this size, on the
+# reasoning that the room deserved a reading halfway between the figures and
+# the forecast; on the wall it read as a different program's output stapled to
+# the page, which is exactly what it is and exactly what it should not look
+# like.
+#
+# 2 puts a bitmap character at 16x32 px, so three of them fill a box of 48x32.
+# That box is the contract: everything that can draw into it — fbink with the
+# page's own font, fbink with its bitmap face, or eips — is sized to fit it,
+# and `kindle/local/draw.sh` picks whichever is available. See its header.
+INDOOR_SCALE = 2
 # Three characters is the widest reading the device is allowed to produce
 # (INDOOR_TEMP_MIN is -10 °C), and the value is right-aligned inside them.
 INDOOR_SLOT_CHARS = 3
@@ -76,7 +81,10 @@ INDOOR_SLOT_CHARS = 3
 # `kindle/local/env.sh`: the Kindle writes at those coordinates and nothing here
 # can tell it otherwise. `tests/test_kindle.py` keeps the two sides in step.
 INDOOR_SLOT_X = 468
-INDOOR_SLOT_Y = 118
+# 134, not the 118 the taller slot used, so that the box stays centred on the
+# same line: it lost 32 px of height and half of that comes off the top. The
+# centre is y=150 either way, which is also where the eips fallback lands.
+INDOOR_SLOT_Y = 134
 
 # On-screen copy is Italian on purpose: the panel hangs on an Italian wall.
 # Only code comments and documentation are in English.

@@ -18,7 +18,8 @@ runtime. This directory holds the files that replace or extend its own:
 | `local/draw.sh` | `eips` plus the temperature stamped on top, with `fbink` |
 | `extensions/k4weather/` | the KUAL menu, to start the panel without a computer |
 | `tools/keytest.sh` | diagnostics for the buttons, run on the device (below) |
-| `fbink` | not in this repository: the binary that draws the value large (below) |
+| `fonts/indoor.ttf` | the page's own font, subset and with its features frozen, so the device can draw the reading in it (below) |
+| `fbink` | not in this repository: fetched by install.sh, draws the value (below) |
 
 ## What `kindle-dash` actually does
 
@@ -62,14 +63,42 @@ Two behaviours that explain how our configuration is written:
 
 Jailbreak, USBNetwork and Wi-Fi have to be configured already.
 
-The scripted way, from the Mac, is [`install.sh`](install.sh): it downloads the
-runtime, applies our configuration, checks the image URL, copies everything to
-the device and deliberately starts nothing.
+The scripted way, from the computer, is [`install.sh`](install.sh): it downloads
+the runtime, applies our configuration, normalises the line endings, checks the
+image URL, copies everything to the device and deliberately starts nothing.
 
 ```sh
 ./kindle/install.sh                      # uses root@192.168.15.244
 ./kindle/install.sh root@192.168.1.50    # Kindle reachable over Wi-Fi
 ```
+
+On Windows the same script runs under Git Bash, or from PowerShell through
+[`install.ps1`](install.ps1), which only finds that bash and hands over to it:
+
+```powershell
+.\kindle\install.ps1
+```
+
+### Without SSH, over the USB disk
+
+```sh
+./kindle/install.sh --drive E:
+```
+
+Same build, same patching, same line endings — only the transport differs. In
+USB drive mode the Kindle exposes `/mnt/us` as a volume, so `dashboard` and
+`extensions` are simply written to it; the KUAL menu then starts, tests and
+diagnoses the panel from the device itself. Nothing is lost but the `chmod`,
+and FAT stores no execute bit anyway, which is why every menu action names
+`/bin/sh` and every script tests for `-f` rather than `-x`.
+
+It refuses to write to a volume with no `system` and no `documents` directory
+at its root, and it only ever adds and overwrites: nothing on the Kindle is
+deleted.
+
+This is the way out when the USB network link cannot be made to work — on
+Windows that is a real possibility and not a fault of this project, see below.
+Toggle usbnet off with `;un` on the device and the Kindle comes back a drive.
 
 By hand it is four steps:
 
@@ -115,9 +144,110 @@ it needs changing if either does. Nothing else is a URL: the device asks for
 `locations.txt` and then for exactly the file names that file gives it, so the
 naming of the images is never guessed on this side.
 
+### Carriage returns
+
+The one platform difference that reaches the device. busybox `ash` does not
+treat a carriage return as whitespace — it is an ordinary character, and it
+becomes part of the value of whatever assignment it terminates. A copy of these
+scripts with CRLF line endings therefore reads
+
+```sh
+DASH_DIR=${DASH_DIR:-/mnt/us/dashboard}     # -> "/mnt/us/dashboard<CR>"
+export INTERACT=${INTERACT:-true}           # -> "true<CR>", which is not "true"
+```
+
+so the panel reports that it is not installed, and the page buttons stop being
+read — neither of which says anything on a device with no terminal. Git for
+Windows produces exactly that unless it is told otherwise.
+
+Three things now prevent it, in the order they act: the `.gitattributes` at the
+root of the repository forces LF on every platform, `install.sh` strips any
+remaining CR from every script before it copies it, and *Meteo: avvia il
+pannello* repairs an installation that already has them. *Meteo: diagnostica*
+names the offending files. If you cloned before `.gitattributes` existed, run
+`make lineendings` once.
+
 ### If SSH times out with USBNetwork on
 
-USBNetwork **is not a DHCP server**. macOS brings the interface up (it appears
+USBNetwork **is not a DHCP server**, on any operating system: the host end of
+the link never gets an address on the Kindle's subnet by itself, and until it
+has one the packets leave through the Wi-Fi and die there. `install.sh` detects
+this and prints the right command for the platform it is running on.
+
+On **Windows** the Kindle appears as an RNDIS adapter — but find it by the
+*driver description*, never by the connection name. `netsh interface ipv4 show
+interfaces` lists `Ethernet 2`, `Ethernet 3` and so on, and which of them is
+the Kindle is an accident of enumeration order: on this author's machine
+`Ethernet 2` is a USB network dongle carrying the whole LAN, and putting the
+Kindle's address on it takes the computer off its own network.
+
+```powershell
+Get-NetAdapter | Where-Object InterfaceDescription -match 'RNDIS|Remote NDIS'
+```
+
+Then, from an *administrator* PowerShell, with the `Name` that came back:
+
+```powershell
+netsh interface ipv4 set address name="<that name>" static 192.168.15.201 255.255.255.0
+```
+
+If that query returns nothing, look under **Ports (COM & LPT)** before
+concluding anything, because the likeliest cause on Windows is not that the
+Kindle is absent:
+
+```powershell
+Get-PnpDevice -PresentOnly | Where-Object InstanceId -match 'VID_0525'
+```
+
+In usbnet mode the Kindle does not use Amazon's own USB vendor id at all — it
+presents the **Linux gadget, `0525:a4a2`**, whose bus description reads
+`RNDIS/Ethernet Gadget`. Windows 10 and 11 take that descriptor for a CDC-ACM
+serial port and bind `usbser.sys`, so a perfectly healthy Kindle turns up as
+`Dispositivo seriale USB (COM6)` and never becomes a network adapter at all.
+The same fault hits the Raspberry Pi Zero and Android tethering.
+
+The driver it should have is already in Windows; it just has to be pointed at
+the device by hand, from Device Manager as an administrator:
+
+1. **Ports (COM & LPT)** → the COM device → **Update driver**
+2. **Browse my computer** → **Let me pick from a list**
+3. **Have Disk…**, and type the path — `C:\Windows\INF` is hidden, so Browse
+   will not show it:
+   ```
+   C:\Windows\INF\netrndis.inf
+   ```
+4. Model **USB RNDIS Adapter** — not the *6* variant
+5. Accept the compatibility warning
+
+Two details that cost an evening if you do not know them. **Unticking "Show
+compatible hardware" is not enough**: Device Manager still filters the list to
+the *Ports* setup class the device is currently in, so no network driver can
+appear there at all, whatever the tick says. Naming the INF is what escapes
+that. And the model to look for is **not** *Remote NDIS based Internet Sharing
+Device*, which most guides on the web name: that entry comes from a Windows
+Mobile INF that a current Windows 11 does not ship. What is there is:
+
+| INF | Models it offers |
+|---|---|
+| `netrndis.inf` | **USB RNDIS Adapter**, USB RNDIS6 Adapter |
+| `rndiscmp.inf` | Remote NDIS Compatible Device |
+
+`USB RNDIS Adapter` is the one to take: it sets `Rndis5to6Conversion=1`, which
+is exactly what a Linux gadget speaking RNDIS 5.x needs. If it does not take,
+`rndiscmp.inf` → *Remote NDIS Compatible Device* is the fallback.
+
+The device then moves to *Network adapters* and the `netsh` step above applies.
+It is reversible throughout, from Properties → Driver → Roll Back Driver.
+
+Only if there is no RNDIS adapter *and* no `VID_0525` device is the Kindle
+really not presenting itself over USB: a power-only cable (a charging LED
+proves nothing — that is the one thing such a cable does do), or USBNetwork
+switched off, which is the default. Turn it on from the device with KUAL >
+USBNetwork > *toggle usbnetwork*, or by typing `;un` into the search box.
+`install.sh` distinguishes all three cases and says which one it is.
+
+On **macOS**, the same thing with the tools that exist there. macOS brings the
+interface up (it appears
 as `RNDIS/Ethernet Gadget`), asks for an address, gets no answer and after the
 timeout falls back to a link-local `169.254.x.x`. At that point there is no
 route towards `192.168.15.0/24`, so packets for the Kindle leave through the
@@ -421,29 +551,54 @@ the screen is up, so the installer rewrites those call sites to
 then writes the value on top of it with a second call.
 
 ```
-eips -g dash.png                                        the dashboard, dash included
-fbink -q -F IBM -S 4 -x 0 -y 0 -X 468 -Y 118 -- " 21"   the value, in the blank
+eips -g dash.png                                          the dashboard, dash included
+fbink -q -t regular=fonts/indoor.ttf,px=30,top=134,      bottom=634,left=468,right=84,padding=BOTH -- " 21"  the value, in the blank
 ```
 
-The second call is **not** `eips`. `eips` has one font and one size, 12×20 px
-cells, which next to an outdoor temperature 96 px tall reads as a footnote.
-[`fbink`](https://github.com/NiLuJe/FBInk) scales its 8×16 bitmap font by a
-whole number — `-S 4` gives characters of 32×64 px, whose digits stand about
-48 px tall, between the 26 px figures beside the forecast and the 96 px of the
-forecast itself — and `-X`/`-Y` place them to the pixel instead of to the cell.
-Only whole numbers are on offer, so the size is a choice between `-S 3` and
-`-S 4` rather than a dial; the layout follows whichever it is, because the hole
-is computed from `INDOOR_SCALE` and not written down.
+The second call is **not** `eips`, and it draws in **the page's own font**.
 
-It is a static ARM binary, not ours to vendor: download the **legacy** build
-(the Kindle 4 is an einkfb device, not one of the newer mxcfb ones) from [its
-releases](https://github.com/NiLuJe/FBInk/releases), drop it in `kindle/fbink`,
-and `install.sh` carries it to `/mnt/us/dashboard/fbink`. Run that second line
-by hand once, from the device, and check the flags against `fbink -h`: they are
-the one thing here a future version could rename.
+`eips` has one font and one size, 12×20 px cells, which beside the 26 px
+figures across the rule reads as a footnote — that is what the panel showed for
+as long as fbink was missing.
+[`fbink`](https://github.com/NiLuJe/FBInk) can do better in two ways, and
+`local/draw.sh` tries them in order, falling through on failure:
 
-**Without it nothing breaks**: `draw.sh` falls back to `eips` and writes the
-value small, centred in the very same blank.
+| | draws with | looks like |
+|---|---|---|
+| 1 | `fbink -t`, `fonts/indoor.ttf` | Inter SemiBold at the size of the figures beside it — the same thing |
+| 2 | `fbink -F IBM -S 2` | its own bitmap face, the right size, visibly another program |
+| 3 | `eips` | 12×20 cells, small |
+
+**The font is the interesting part.** fbink renders through `stb_truetype`,
+which reads outlines and applies no OpenType features — while the page asks for
+`font-feature-settings: "tnum" 1, "cv05" 1`, so its digits are the tabular
+variants. Handed the page's own woff2, fbink would draw different glyph shapes
+of different widths: Inter's proportional `1` advances 0.42 em against `4` at
+0.67, so the reading would also jitter between refreshes.
+
+`tools/indoor_font.py` builds `kindle/fonts/indoor.ttf` instead: it applies
+those substitutions to the character map directly, widens the blank to a digit
+so that padding right-aligns exactly, and subsets the result to the eleven
+characters a temperature can use. 8 KB, committed, and rebuilt with
+`make indoor-font` when the page's font or its features change.
+
+Two consequences of that widened blank, both load-bearing: `" 21"` and `"-10"`
+end in the same place against the degree sign, and a padded string fills the
+box — so the background fbink paints behind it covers the dash the image
+carries for a sensor that cannot be read. A narrower string would leave that
+dash struck through the digits.
+
+**Where fbink comes from.** Not from its own releases, whatever this file used
+to say: FBInk publishes a source tarball and has never published a build, so
+the instruction could not be followed and the binary was simply never
+installed. `install.sh` fetches it from **KOReader**, whose `kindle` package is
+armv7 softfloat against an old glibc — what a Kindle 4 runs — and whose `fbink`
+is the standalone binary its own startup scripts call. It needs `libc` and
+`libm` and nothing else. Drop your own build in `kindle/fbink` and that is used
+instead.
+
+**Without any of it nothing breaks**: `draw.sh` falls back a step at a time,
+and the last step still writes the value into the very same blank.
 
 `INDOOR_TEMP_X/Y/SCALE/CHARS` in `local/env.sh` say where the value goes and how
 big it is drawn, and must match `INDOOR_SLOT_X/Y`, `INDOOR_SCALE` and
@@ -476,12 +631,13 @@ after ten seconds or so the device suspends. From then on it wakes by itself at
 
 `install.sh` also puts a KUAL extension in `/mnt/us/extensions/k4weather`, so
 the panel can be brought up from the device's own menu — no cable, no SSH.
-Four entries, under **k4-weather**:
+Five entries, under **k4-weather**:
 
 | Entry | What it does |
 |---|---|
 | *Meteo: avvia il pannello* | the real start, detached (see below) |
 | *Meteo: prova (scarica e disegna)* | one download, one draw, no loop and no suspend — the reader keeps running underneath |
+| *Meteo: prova i tasti pagina* | twenty seconds of the real listening window, then a verdict on screen |
 | *Meteo: ferma e torna al lettore* | `stop.sh` followed by `framework start` |
 | *Meteo: diagnostica* | writes `k4weather-diagnostica.txt` to the root of the USB drive; changes nothing |
 
@@ -498,6 +654,31 @@ framework's session and gets torn down with the thing it just killed. So
 back to `nohup` and a double fork where busybox has no `setsid` — and only then
 lets go of it. It also refuses to start a second loop, which would mean two
 processes competing for the screen and for the RTC wakeup.
+
+**Why the start entry waits, and then checks.** `start.sh` backgrounds
+`dash.sh` and returns immediately, so its exit status says nothing at all about
+whether the loop survived — which is how a start that failed looked exactly like
+a start that worked. The detached half now sleeps a few seconds before
+launching, so KUAL has finished leaving before the framework is pulled down
+underneath it, and then waits and asks the process table whether `dash.sh` is
+still there. If it is not, it copies the tail of `dash.log` into `kual.log`,
+starts the framework again — a Kindle that is a Kindle is a far better failure
+than a black screen — and says so on the screen.
+
+**On the button test.** *Meteo: prova i tasti pagina* runs `local/interact.sh`
+itself, in the conditions it really runs in: the framework stopped, the panel
+on screen, twenty seconds of listening. Not a copy of the decoding — a test
+that passes against a second implementation proves nothing about the first. It
+then distinguishes the three failures that look identical from the outside:
+
+| On screen | What it means |
+|---|---|
+| *OK, N cambi su M pressioni* | the whole path works |
+| *tasti letti ma codici sconosciuti* | the buttons send codes this device was never told about. They are in `kual.log`; put them in `KEY_NEXT` / `KEY_PREV` |
+| *tasti letti, nessun cambio* | the buttons work and the cycle does not — usually one location with an image |
+| *nessuna pressione rilevata* | nothing reached the input layer at all |
+
+The framework is started again whichever way it ends, signals included.
 
 **Why the entries name `/bin/sh` and an absolute path.** Both halves of
 
@@ -522,7 +703,7 @@ error is not lost — it is in a file nothing shows you:
 
 | File | What is in it |
 |---|---|
-| `/var/tmp/KUAL.log` | KUAL's own. The shell's `not found` / `Permission denied` for a menu action goes here and **nowhere else**. Look here first. |
+| `/var/tmp/KUAL.log`, `/mnt/us/extensions/KUAL.log` | KUAL's own — it has used both paths. The shell's `not found` / `Permission denied` for a menu action goes here and **nowhere else**. Look here first. |
 | `/mnt/us/extensions/k4weather/kual.log` | what these scripts say for themselves, including runs where `/mnt/us/dashboard` was not there to log into |
 | `/mnt/us/dashboard/logs/dash.log` | the loop itself, once it starts |
 

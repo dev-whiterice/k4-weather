@@ -43,7 +43,21 @@ download() {
 
   i=1
   while [ "$i" -le "$ATTEMPTS" ]; do
-    if "$XH" -d -q --follow -o "$tmp" get "$url" && [ -s "$tmp" ]; then
+    # `</dev/null` is not decoration, and leaving it out cost this project four
+    # locations out of five.
+    #
+    # xh follows httpie: when its standard input is not a terminal, it takes
+    # whatever is there as the body of the request. This function is called
+    # from inside `while read ... done < "$LOC_MANIFEST"`, so its standard
+    # input IS the manifest — xh swallowed the rest of the file, `read` found
+    # end of file, and the loop ended after its first line. Every refresh
+    # downloaded the first location and silently skipped the others; the panel
+    # then had exactly one image, and the page buttons had nothing to move
+    # between.
+    #
+    # It fails this way whether the network works or not, which is what made it
+    # so hard to see: it looks exactly like four downloads that did not happen.
+    if "$XH" -d -q --follow -o "$tmp" get "$url" </dev/null && [ -s "$tmp" ]; then
       mv "$tmp" "$out"
       return 0
     fi
@@ -80,7 +94,11 @@ fi
 # ------------------------------------------------------------------ the images
 
 downloaded=0
-while IFS="	" read -r id image name; do
+# Read on file descriptor 3 rather than on standard input, so that the list
+# being walked cannot be eaten by anything called from inside the walk. `xh`
+# did exactly that — see `download` above — and the belt goes here so that the
+# next command added to this loop cannot repeat it.
+while IFS="	" read -r id image name <&3; do
   [ -n "$id" ] || continue
   if download "$BASE_URL/$image" "$LOC_CACHE/$id.png.new"; then
     mv "$LOC_CACHE/$id.png.new" "$LOC_CACHE/$id.png"
@@ -92,7 +110,7 @@ while IFS="	" read -r id image name; do
     # matters if it is the one on screen, which the final check below catches.
     echo "k4-weather: ${id} not downloaded, keeping the cached copy" >&2
   fi
-done < "$LOC_MANIFEST"
+done 3< "$LOC_MANIFEST"
 
 # Images for locations that are no longer configured. Left behind they would
 # stay in the cycle for ever, since the cycle is built from what is on disk.

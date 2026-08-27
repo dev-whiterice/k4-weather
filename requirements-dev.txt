@@ -1,2 +1,6 @@
 -r requirements.txt
 pytest==8.3.3
+# tools/indoor_font.py only: builds the font the Kindle draws the indoor
+# temperature with. brotli is what lets fontTools open the woff2 it starts from.
+fonttools==4.63.0
+brotli==1.1.0

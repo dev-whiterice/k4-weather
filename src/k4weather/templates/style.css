@@ -175,9 +175,10 @@ svg {
 /* ----------------------------------------------------- indoor temperature */
 
 /* The room's temperature is not rendered here: the Kindle writes it on top of
-   the image, in the bitmap font of `fbink` — 32x64 px per character, three of
-   them — or, where fbink is not installed, in the smaller one of `eips`. This
-   box is the hole left for it, and its position comes straight from
+   the image with `fbink`, in this page's own font at the size below — or, if
+   the font did not arrive, in fbink's bitmap face at 16x32 px per character,
+   three of them, and failing that in the smaller one of `eips`. This box is
+   the hole left for it, and its position comes straight from
    INDOOR_SLOT_* in model.py, in pixels of the final PNG — hence the absolute
    placement against `body`. Everything else in this block hangs off it, so
    there is exactly one number to get right.

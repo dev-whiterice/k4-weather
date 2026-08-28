@@ -94,7 +94,12 @@ def resolve(glyph: str, mapping: dict[str, str]) -> str:
 
 
 def build() -> Path:
-    font = TTFont(SOURCE)
+    # recalcTimestamp=False, or fontTools stamps `head.modified` with the
+    # current time on every save: rebuilding an unchanged font then produced a
+    # diff — the timestamp and the checksum computed over it — on a file that
+    # is committed on purpose. Left as it is, it is Inter's own date and moves
+    # only when Inter does.
+    font = TTFont(SOURCE, recalcTimestamp=False)
     mapping = single_substitutions(font, FEATURES)
     best = font.getBestCmap()
 

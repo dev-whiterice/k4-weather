@@ -8,6 +8,11 @@ alive.
 
 ![preview](docs/preview.png)
 
+> Straight out of `make preview`, which is why two figures are dashes: the
+> temperature of the room and the level of the battery are the only things on
+> the page no server can know, and the Kindle writes them into those blanks
+> itself once the image is on screen.
+>
 > The on-screen copy is in Italian on purpose — the panel hangs on an Italian
 > wall. Code, comments and documentation are in English.
 

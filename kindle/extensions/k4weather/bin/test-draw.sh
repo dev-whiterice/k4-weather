@@ -3,8 +3,8 @@
 # /mnt/us/extensions/k4weather/bin/test-draw.sh on the Kindle.
 #
 # This is the SSH check-list from kindle/README.md — fetch, then draw with the
-# indoor temperature on top — reduced to a menu entry, for the case where the
-# computer is not at hand. It touches neither the framework nor the RTC: the
+# indoor temperature and the battery level stamped on top — reduced to a menu
+# entry, for the case where the computer is not at hand. It touches neither the framework nor the RTC: the
 # reader keeps running underneath and the image stays until the next keypress
 # repaints the home screen.
 #

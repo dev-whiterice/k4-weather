@@ -51,5 +51,6 @@ LICENSE   text eol=lf
 # about a PNG or a font would corrupt it on checkout.
 *.png     binary
 *.woff2   binary
+*.ttf     binary
 *.ico     binary
 *.jpg     binary

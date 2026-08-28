@@ -93,7 +93,9 @@ curl -sI https://dev-whiterice.github.io/k4-weather/dashboard-caoria.png | head 
 The Pages site itself shows all of them side by side, which is the quickest way
 to see that a location you have just added really renders.
 
-From here on the workflow restarts by itself at :00 and :30.
+From here on the workflow restarts by itself at :07 and :37 — off the top and
+the bottom of the hour, which are the two minutes the GitHub Actions scheduler
+is most likely to delay or drop a run asked for.
 
 ## 5. Keep the scheduler alive (recommended)
 
@@ -135,8 +137,10 @@ Wi-Fi configured. Reference: [the MobileRead
 wiki](https://wiki.mobileread.com/wiki/Kindle4NTHacking).
 
 Worth doing first: put the `fbink` binary in `kindle/fbink`, so the installer
-carries it over. It is what draws the indoor temperature at a size you can read
-from a doorway; without it that one number comes out small
+carries it over. It is what writes on the image the two numbers only the device
+can know. Without it the indoor temperature comes out small, drawn by `eips`,
+and the battery level is not drawn at all — an `eips` cell is bigger than the
+footer it would land in
 ([details](../kindle/README.md#how-the-number-gets-on-screen)).
 
 ```sh
@@ -190,6 +194,8 @@ of the four possible faults it is.
 | The indoor temperature lands off its blank | Move it with `INDOOR_TEMP_X/Y`, in pixels, and `INDOOR_SLOT_X/Y` in `model.py` by the same amount — or the dash underneath stays where it was |
 | The indoor temperature is drawn small | `fbink` is not on the device, or not executable: `local/draw.sh` fell back to `eips`. See [`kindle/README.md`](../kindle/README.md#how-the-number-gets-on-screen) |
 | The indoor temperature reads too high | Normal before calibration: it is the battery, not the room. See [`kindle/README.md`](../kindle/README.md#calibrating-the-offset) |
+| The battery level stays a dash | Either `fbink` is missing — it is the only thing that draws this one — or the gauge is unreadable: `local/battery.sh --probe` on the device says which |
+| The battery level is half an hour old | By design: it is read when the panel wakes to draw, so it is exactly as old as the image beside it |
 | The KUAL entry starts nothing | Since the panel is launched detached, a failed start now says so on the screen and puts the tail of `dash.log` into `extensions/k4weather/kual.log`. If it does not even get that far, the installation was copied with **CRLF line endings** — see the row below |
 | Installed from Windows, and nothing works | busybox `ash` reads a carriage return as part of the value before it, so `DASH_DIR` names a directory that does not exist and `INTERACT` is not equal to `true`. *Meteo: diagnostica* names the files; *Meteo: avvia il pannello* repairs them; `make lineendings` then reinstalling fixes it at the source |
 | The page buttons do nothing | Press **power** first: the keypad on a Kindle 4 cannot wake the device. Then **KUAL > k4-weather > *Meteo: prova i tasti pagina***, which runs the real listening window and distinguishes the four causes: nothing read at all, codes this device sends that `KEY_NEXT`/`KEY_PREV` do not list, one location in the cache, or `INTERACT` not equal to `true`. `logs/dash.log` carries the same lines |
@@ -232,6 +238,7 @@ ssh root@192.168.15.244 /mnt/us/dashboard/stop.sh
 ssh root@192.168.15.244 /mnt/us/dashboard/start.sh
 ```
 
-A change that moves the blank left for the indoor temperature touches both
-halves at once. Update them in either order: until the second one lands, at most
-one refresh cycle draws the value beside its blank instead of inside it.
+A change that moves either blank the device writes into — the indoor
+temperature, the battery level — touches both halves at once. Update them in
+either order: until the second one lands, at most one refresh cycle draws the
+value beside its blank instead of inside it.

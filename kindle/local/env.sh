@@ -7,9 +7,11 @@
 
 export WIFI_TEST_IP=${WIFI_TEST_IP:-1.1.1.1}
 
-# The workflow generates the image at :00 and :30, but the GitHub Actions cron
-# runs 5-20 minutes late. Waking at :15 and :45 gives generation a 15-minute
-# head start, so we almost always download the image just published.
+# The workflow generates the image at :07 and :37 — off the top and the bottom
+# of the hour on purpose, because those are the two most contended minutes on
+# the GitHub Actions scheduler and runs asked for there are delayed or dropped.
+# Waking at :15 and :45 still gives generation eight minutes of head start, so
+# we almost always download the image just published.
 export REFRESH_SCHEDULE=${REFRESH_SCHEDULE:-"15,45 * * * *"}
 
 export TIMEZONE=${TIMEZONE:-"Europe/Rome"}
@@ -120,10 +122,6 @@ export INDOOR_TEMP_TTF=${INDOOR_TEMP_TTF:-/mnt/us/dashboard/fonts/indoor.ttf}
 # font so that ascent-to-descent measures this, a browser scales the em square,
 # and Inter's ascent-to-descent is 1.21 em. 30 here is 25px of stylesheet.
 export INDOOR_TEMP_PX=${INDOOR_TEMP_PX:-30}
-# What one character advances at that size, in whole pixels. Every character in
-# indoor.ttf is this wide — frozen tabular figures — so the value is
-# right-aligned by arithmetic instead of by padding.
-export INDOOR_TEMP_ADVANCE=${INDOOR_TEMP_ADVANCE:-16}
 
 # How much fbink enlarges its bitmap face, for the fallback: 2 puts a character
 # at 16x32 px, so three of them fill the same 48x32 box.

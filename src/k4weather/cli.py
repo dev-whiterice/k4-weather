@@ -192,6 +192,16 @@ def cmd_inspect(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows chooses the ANSI code page for a redirected stream, and neither
+    # the check marks `inspect` prints nor the dashes in the log messages are
+    # in it: `python -m k4weather inspect out > report.txt` then died on an
+    # encode error rather than printing a report, and the same run through a
+    # terminal was fine. UTF-8 on both streams, and replacement rather than an
+    # exception wherever even that cannot be honoured.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(prog="k4weather")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("-v", "--verbose", action="store_true")

@@ -51,7 +51,9 @@ def main(out: str) -> None:
     # Same pipeline as the dashboard, so the sheet shows the icons exactly as
     # the panel will: 16 grays, no colour, no alpha.
     cfg = Config(
-        location=Location("contact sheet", 0, 0),
+        # A location is required and never used: the sheet renders icons, not a
+        # dashboard, and only the display geometry below reaches the screenshot.
+        locations=(Location(id="sheet", name="contact sheet", latitude=0, longitude=0),),
         display=Display(width=600, height=SHEET_MARGIN + len(names) * ROW_HEIGHT,
                         gray_levels=16),
     )

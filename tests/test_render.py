@@ -53,16 +53,23 @@ def test_jinja_comments_do_not_reach_the_output(html):
 
 
 @pytest.mark.slow
-def test_the_indoor_slot_lands_where_the_kindle_writes(forecast, cfg):
-    """The blank left for the Kindle has to be where the Kindle writes.
+@pytest.mark.parametrize(
+    "feature,selector,slot",
+    [
+        ("indoor_temperature", ".indoor-slot", model.indoor_slot()),
+        ("battery", ".battery-slot", model.battery_slot()),
+    ],
+)
+def test_a_slot_lands_where_the_kindle_writes(forecast, cfg, feature, selector, slot):
+    """A blank left for the Kindle has to be where the Kindle writes.
 
-    Everything about that position is implicit in the CSS — the padding of the
-    footer, the width of the icon, the height of the band — so measuring it in
-    a real browser is the only way to know it is still true.
+    Everything about those positions is implicit in the CSS — the padding of
+    the footer, the width of the icon, the height of the band — so measuring
+    them in a real browser is the only way to know they are still true.
     """
     from playwright.sync_api import sync_playwright
 
-    cfg = replace(cfg, features=replace(cfg.features, indoor_temperature=True))
+    cfg = replace(cfg, features=replace(cfg.features, **{feature: True}))
     now = datetime.fromisoformat(forecast["current"]["time"])
     page_html = build_html(build_dashboard(forecast, None, cfg, now=now), cfg)
 
@@ -75,14 +82,51 @@ def test_the_indoor_slot_lands_where_the_kindle_writes(forecast, cfg):
             page.set_content(page_html, wait_until="load")
             page.evaluate("() => document.fonts.ready")
             box = page.evaluate(
-                "() => {const r = document.querySelector('.indoor-slot')"
-                ".getBoundingClientRect(); return [r.x, r.y, r.width, r.height];}"
+                "(selector) => {const r = document.querySelector(selector)"
+                ".getBoundingClientRect(); return [r.x, r.y, r.width, r.height];}",
+                selector,
             )
         finally:
             browser.close()
 
-    slot = model.indoor_slot()
     assert box == [slot.x, slot.y, slot.width, slot.height]
+
+
+@pytest.mark.slow
+def test_the_footer_leaves_the_battery_block_its_room(forecast, cfg):
+    """The note and the block must not be written over one another.
+
+    The block is out of flow — it is placed in pixels of the final PNG, like
+    everything the device fills in — so nothing in the flex row below it knows
+    it is there. What keeps them apart is one padding, and a longer note is
+    what would find out that it is wrong: `dati non aggiornati` is prepended to
+    it whenever the observation behind the image is stale.
+    """
+    from playwright.sync_api import sync_playwright
+
+    cfg = replace(cfg, features=replace(cfg.features, battery=True))
+    now = datetime.fromisoformat(forecast["current"]["time"])
+    dashboard = build_dashboard(forecast, None, cfg, now=now)
+    page_html = build_html(replace(dashboard, stale=True), cfg)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_context(
+                viewport={"width": cfg.display.width, "height": cfg.display.height}
+            ).new_page()
+            page.set_content(page_html, wait_until="load")
+            page.evaluate("() => document.fonts.ready")
+            note_right = page.evaluate(
+                "() => document.querySelector('.foot-note').getBoundingClientRect().right"
+            )
+            icon_left = page.evaluate(
+                "() => document.querySelector('.battery-icon').getBoundingClientRect().x"
+            )
+        finally:
+            browser.close()
+
+    assert note_right <= icon_left
 
 
 @pytest.mark.slow

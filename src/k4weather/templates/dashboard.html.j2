@@ -130,7 +130,7 @@
   {% endfor %}
 </section>
 
-<section class="footer">
+<section class="footer{% if d.battery %} with-battery{% endif %}">
   <div class="foot-left">
     {%- if d.sunrise %}
     <div class="foot-item">{{ icon('sunrise') }}<span>{{ d.sunrise }}</span></div>
@@ -146,6 +146,21 @@
     {%- if d.stale %}<span class="stale">dati non aggiornati</span> · {% endif -%}
     Open-Meteo · agg. {{ d.updated_at }}
   </div>
+
+  {#- The battery level, and the same arrangement as the indoor temperature
+      upstairs: the Kindle writes the number itself into this box, because the
+      gas gauge is on the device and this image is built in the cloud. Hence
+      the pixel coordinates, hence the icon and the per-cent sign hanging off
+      the slot rather than being laid out beside it, and hence the dash — which
+      is what shows until the device fills it in, and if it cannot be read.
+      Refreshed with the page, so it is a reading from the last half hour and
+      not a live one. #}
+  {%- if d.battery %}
+  <div class="battery-slot" style="left: {{ d.battery.x }}px; top: {{ d.battery.y }}px;
+       width: {{ d.battery.width }}px; height: {{ d.battery.height }}px"
+  ><i class="battery-icon">{{ icon('battery') }}</i
+  ><span class="battery-unit">%</span>–</div>
+  {%- endif %}
 </section>
 
 </body>

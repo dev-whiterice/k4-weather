@@ -84,20 +84,37 @@ def _temperature(*args: str, **env: str) -> subprocess.CompletedProcess:
 # ------------------------------------------------------------------ coupling
 
 
-@pytest.mark.parametrize(
-    "variable,constant",
-    [
-        ("INDOOR_TEMP_X", model.INDOOR_SLOT_X),
-        ("INDOOR_TEMP_Y", model.INDOOR_SLOT_Y),
-        ("INDOOR_TEMP_SCALE", model.INDOOR_SCALE),
-        ("INDOOR_TEMP_CHARS", model.INDOOR_SLOT_CHARS),
-    ],
-)
+SLOTS = [
+    ("INDOOR_TEMP_X", model.INDOOR_SLOT_X),
+    ("INDOOR_TEMP_Y", model.INDOOR_SLOT_Y),
+    ("INDOOR_TEMP_SCALE", model.INDOOR_SCALE),
+    ("INDOOR_TEMP_CHARS", model.INDOOR_SLOT_CHARS),
+    ("BATTERY_X", model.BATTERY_SLOT_X),
+    ("BATTERY_Y", model.BATTERY_SLOT_Y),
+    ("BATTERY_SCALE", model.BATTERY_SCALE),
+    ("BATTERY_CHARS", model.BATTERY_SLOT_CHARS),
+]
+
+
+@pytest.mark.parametrize("variable,constant", SLOTS)
 def test_the_kindle_writes_where_the_layout_leaves_a_hole(variable, constant):
     # The Kindle draws at these coordinates whatever the dashboard looks like:
     # if the two drift apart, the value lands on top of something else and
     # nothing in either program can notice.
     assert int(_env_default(variable)) == constant
+
+
+@pytest.mark.parametrize("variable,constant", SLOTS)
+def test_draw_sh_falls_back_to_the_same_hole(variable, constant):
+    # A third spelling of the same eight numbers, for the case where draw.sh is
+    # run by hand without sourcing env.sh first — over SSH, or from the KUAL
+    # menu. It is the one that drifts silently, because on the device env.sh is
+    # always there to cover it: the fallbacks are only ever exercised by a test
+    # or by somebody debugging, which is exactly when they must be right.
+    text = (KINDLE / "draw.sh").read_text(encoding="utf-8")
+    found = re.findall(rf"\$\{{{variable}:-(-?\d+)\}}", text)
+    assert found, f"{variable} has no fallback in draw.sh"
+    assert {int(value) for value in found} == {constant}
 
 
 # ------------------------------------------------------- reading the sensor
@@ -153,6 +170,47 @@ def test_an_unusable_reading_prints_nothing(env):
     assert done.stdout == ""
 
 
+# ------------------------------------------------------- reading the battery
+
+
+def _battery(*args: str, **env: str) -> subprocess.CompletedProcess:
+    return _run(str(KINDLE / "battery.sh"), *args, **env)
+
+
+@pytest.mark.parametrize(
+    "reading,expected",
+    [
+        ("87%", "87"),  # what gasgauge-info -c actually prints
+        ("100%", "100"),
+        ("0%", "0"),
+        ("Battery level: 42%", "42"),
+        ("7", "7"),  # a sysfs file, which prints the bare number
+        ("07", "7"),  # a leading zero is not octal here
+    ],
+)
+def test_the_battery_level_is_read_as_whole_per_cent(reading, expected):
+    done = _battery(BATTERY_CMD=f"echo {reading}")
+    assert done.returncode == 0
+    assert done.stdout.strip() == expected
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"BATTERY_CMD": "false"},  # the gauge is not on this device
+        {"BATTERY_CMD": "echo"},  # it answered nothing
+        {"BATTERY_CMD": "echo pieno"},  # it answered something else
+        {"BATTERY_CMD": "echo 128%"},  # a per cent that is not one
+    ],
+)
+def test_an_unusable_battery_reading_prints_nothing(env):
+    # The dash the image carries then stays, which is the honest thing for it
+    # to say. Anything printed here would be drawn on a wall.
+    done = _battery(**env)
+    assert done.returncode == 1
+    assert done.stdout == ""
+
+
 # ------------------------------------------------------- drawing the reading
 
 
@@ -192,6 +250,10 @@ def _draw(eips, image="/tmp/dash.png", fbink=None, ttf=False, **env) -> None:
     # has been dropped into kindle/ ready to install, or simply where
     # kindle/fonts/indoor.ttf is checked out — which it always is — the default
     # would silently select a different branch.
+    # The battery is off unless a test says otherwise, for the same reason: it
+    # is drawn in the same pass, by the same fbink, and a test asserting on the
+    # calls that pass made cannot be left guessing whether one of them was the
+    # other value.
     _run(
         DRAW,
         "-f",
@@ -200,7 +262,7 @@ def _draw(eips, image="/tmp/dash.png", fbink=None, ttf=False, **env) -> None:
         EIPS=eips.path,
         INDOOR_TEMP_FBINK=fbink.path if fbink else "/nonexistent/fbink",
         INDOOR_TEMP_TTF=str(INDOOR_TTF) if ttf else "/nonexistent/indoor.ttf",
-        **env,
+        **{"BATTERY": "false", **env},
     )
 
 
@@ -305,6 +367,88 @@ def test_the_overlay_can_be_turned_off_on_the_device(eips, fbink):
     assert fbink() == []
 
 
+# ------------------------------------------------------ drawing the battery
+
+
+def _battery_draw(eips, fbink=None, ttf=False, reading="87%", **env):
+    return _draw(
+        eips,
+        fbink=fbink,
+        ttf=ttf,
+        **{
+            "INDOOR_TEMP": "false",
+            "BATTERY": "true",
+            "BATTERY_CMD": f"echo {reading}",
+            **env,
+        },
+    )
+
+
+@pytest.mark.parametrize("reading,drawn", [("87%", " 87"), ("100%", "100"), ("7%", "  7")])
+def test_fbink_draws_the_battery_level_in_the_page_font(eips, fbink, reading, drawn):
+    """The same font as the temperature, at the size of the footer it lands in.
+
+    px=15 against the temperature's 30: fbink sizes text by ascent-to-descent
+    rather than by the em square, so this is the stylesheet's 12.4px — and the
+    size at which every character of indoor.ttf advances exactly 8 px, which is
+    what makes a slot 24 px wide hold three of them.
+    """
+    _battery_draw(eips, fbink=fbink, ttf=True, reading=reading)
+
+    slot = model.battery_slot()
+    assert eips() == ["-f -g /tmp/dash.png"]
+    assert fbink() == [
+        f"-q -t regular={INDOOR_TTF},px=15,top={slot.y},"
+        f"bottom={800 - slot.y - slot.height},left={slot.x},"
+        f"right={600 - slot.x - slot.width},padding=BOTH -- {drawn}"
+    ]
+
+
+def test_the_battery_level_falls_back_to_the_bitmap_face(eips, fbink):
+    _battery_draw(eips, fbink=fbink, ttf=False)
+
+    assert fbink() == [
+        f"-q -F IBM -S {model.BATTERY_SCALE} -x 0 -y 0 "
+        f"-X {model.BATTERY_SLOT_X} -Y {model.BATTERY_SLOT_Y} -- {' 87'}"
+    ]
+
+
+def test_eips_is_never_asked_to_draw_the_battery_level(eips):
+    # It has one font size, 12x20 px per character, which is bigger than the
+    # type of the footer this lands in: there it would be the largest thing in
+    # the bar. Without fbink the dash the image carries stays instead.
+    _battery_draw(eips)
+    assert eips() == ["-f -g /tmp/dash.png"]
+
+
+def test_the_image_is_drawn_even_when_the_gauge_is_not_there(eips, fbink):
+    _battery_draw(eips, fbink=fbink, ttf=True, reading="pieno")
+    assert eips() == ["-f -g /tmp/dash.png"]
+    assert fbink() == []
+
+
+def test_the_battery_level_can_be_turned_off_on_the_device(eips, fbink):
+    _battery_draw(eips, fbink=fbink, ttf=True, BATTERY="false")
+    assert fbink() == []
+
+
+def test_both_values_go_on_in_one_pass(eips, fbink):
+    # One call to eips for the image and one call to fbink per blank, in the
+    # order the page reads: the room's temperature, then the footer.
+    _draw(
+        eips,
+        fbink=fbink,
+        ttf=True,
+        INDOOR_TEMP_CMD="echo 21",
+        INDOOR_TEMP_UNIT="C",
+        BATTERY="true",
+        BATTERY_CMD="echo 87%",
+    )
+
+    assert eips() == ["-f -g /tmp/dash.png"]
+    assert [call.split(" -- ")[-1] for call in fbink()] == [" 21", " 87"]
+
+
 def test_the_sleeping_screen_gets_no_temperature(eips, fbink):
     # It is not the dashboard: it has no slot to write into.
     _draw(
@@ -312,6 +456,8 @@ def test_the_sleeping_screen_gets_no_temperature(eips, fbink):
         image="/mnt/us/dashboard/sleeping.png",
         fbink=fbink,
         INDOOR_TEMP_CMD="echo 73 Fahrenheit",
+        BATTERY="true",
+        BATTERY_CMD="echo 87%",
     )
     assert eips() == ["-f -g /mnt/us/dashboard/sleeping.png"]
     assert fbink() == []

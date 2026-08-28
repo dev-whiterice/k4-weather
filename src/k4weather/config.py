@@ -92,6 +92,8 @@ class Features:
     # Off by default: the value is written by the Kindle itself, so on any
     # other screen the slot would stay empty for ever. See kindle/README.md.
     indoor_temperature: bool = False
+    # The same, for the level of the battery the panel runs on.
+    battery: bool = False
 
 
 @dataclass(frozen=True)

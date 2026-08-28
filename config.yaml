@@ -63,6 +63,8 @@ features:
   air_quality: true
   moon_phase: true
   sun_times: true
-  # Reserves the footer slot the Kindle writes its own temperature into.
+  # Reserves the blank the Kindle writes its own temperature into.
   # Pointless without the client on the device: see kindle/README.md.
   indoor_temperature: true
+  # The same, for the battery level it writes in the footer.
+  battery: true

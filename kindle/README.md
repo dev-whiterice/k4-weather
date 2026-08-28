@@ -1,7 +1,8 @@
 # The client on the Kindle 4
 
 The Kindle computes almost nothing: it wakes up, downloads the images, draws
-one, writes its own temperature on top of it and goes back to sleep. All the
+one, writes its own temperature and its own battery level on top of it and goes
+back to sleep. All the
 fragile parts — waiting for Wi-Fi, modern TLS, suspend to RAM, wake-up
 scheduled by the hardware clock — are already solved by
 [pascalw/kindle-dash](https://github.com/pascalw/kindle-dash), used here as the
@@ -15,11 +16,12 @@ runtime. This directory holds the files that replace or extend its own:
 | `local/interact.sh` | listens to the page buttons and moves between locations |
 | `local/suspend.sh` | suspend to RAM, and telling the clock from a person |
 | `local/indoor-temp.sh` | the temperature sensor, read and calibrated |
-| `local/draw.sh` | `eips` plus the temperature stamped on top, with `fbink` |
+| `local/battery.sh` | the gas gauge, read as whole per cent |
+| `local/draw.sh` | `eips` plus the two device readings stamped on top, with `fbink` |
 | `extensions/k4weather/` | the KUAL menu, to start the panel without a computer |
 | `tools/keytest.sh` | diagnostics for the buttons, run on the device (below) |
-| `fonts/indoor.ttf` | the page's own font, subset and with its features frozen, so the device can draw the reading in it (below) |
-| `fbink` | not in this repository: fetched by install.sh, draws the value (below) |
+| `fonts/indoor.ttf` | the page's own font, subset and with its features frozen, so the device can draw its readings in it (below) |
+| `fbink` | not in this repository: fetched by install.sh, draws the values (below) |
 
 ## What `kindle-dash` actually does
 
@@ -293,10 +295,11 @@ ls -l cache/                      # one PNG per location, plus locations.txt
 cat state/location                # the one that would be on screen
 ./xh --version                    # must run: it is a static ARM binary
 
-# The sensor, without touching the screen either
+# The two sensors, without touching the screen either
 ./local/indoor-temp.sh --probe
+./local/battery.sh --probe
 
-# Then the drawing, temperature included
+# Then the drawing, both values included
 . ./local/env.sh && ./local/draw.sh -f -g /tmp/test.png
 
 # Finally the whole loop, in the foreground
@@ -548,11 +551,12 @@ beats a wrong one.
 `kindle-dash` calls `/usr/sbin/eips` inline and offers no hook that runs once
 the screen is up, so the installer rewrites those call sites to
 `local/draw.sh`, a drop-in wrapper: it draws the image with the real `eips`,
-then writes the value on top of it with a second call.
+then writes each value on top of it with a call of its own.
 
 ```
-eips -g dash.png                                          the dashboard, dash included
-fbink -q -t regular=fonts/indoor.ttf,px=30,top=134,      bottom=634,left=468,right=84,padding=BOTH -- " 21"  the value, in the blank
+eips -g dash.png                                          the dashboard, dashes included
+fbink -q -t regular=fonts/indoor.ttf,px=30,top=134,      bottom=634,left=492,right=60,padding=BOTH -- " 21"  the temperature
+fbink -q -t regular=fonts/indoor.ttf,px=15,top=769,      bottom=15,left=542,right=34,padding=BOTH -- " 87"   the battery level
 ```
 
 The second call is **not** `eips`, and it draws in **the page's own font**.
@@ -603,19 +607,61 @@ and the last step still writes the value into the very same blank.
 `INDOOR_TEMP_X/Y/SCALE/CHARS` in `local/env.sh` say where the value goes and how
 big it is drawn, and must match `INDOOR_SLOT_X/Y`, `INDOOR_SCALE` and
 `INDOOR_SLOT_CHARS` in `src/k4weather/model.py`, which is where the hole is
-left. `tests/test_kindle.py` fails when the two drift apart. The eips fallback
-derives its own cell coordinates from those same four numbers, so there is one
-slot to move and not two: if the value lands off its blank, `INDOOR_TEMP_X/Y`
-are the knobs — in pixels, so the correction is as fine as the error — and the
-generator has to move by the same amount, or the dash underneath will still be
-sitting where it was.
+left. `tests/test_kindle.py` fails when the two drift apart, and it checks the
+same four numbers a third time where `local/draw.sh` repeats them as its own
+fallbacks. The eips step derives its cell coordinates from them too, so there
+is one slot to move and not two: if the value lands off its blank,
+`INDOOR_TEMP_X/Y` are the knobs — in pixels, so the correction is as fine as
+the error — and the generator has to move by the same amount, or the dash
+underneath will still be sitting where it was.
 
-Two details of the wrapper worth knowing:
+Three details of the wrapper worth knowing:
 
-- **the sleeping screen gets nothing.** It is not the dashboard and has no slot.
+- **the sleeping screen gets nothing.** It is not the dashboard and has no slots.
 - **a failed refresh gets nothing either.** When the download fails,
-  `kindle-dash` leaves the previous image on screen; writing a fresh number
+  `kindle-dash` leaves the previous image on screen; writing fresh numbers
   over a stale dashboard would be the one genuinely misleading combination.
+- **a reading that cannot be taken gets nothing.** The dash the image carries
+  stays, and says so. Each value is independent: a broken sensor does not stop
+  the other one being drawn.
+
+## The battery level
+
+The footer carries a dash and a per-cent sign at its right end, past the
+generation time, and the Kindle writes the number into it on the same pass that
+writes the temperature. The reading comes from `gasgauge-info -c`, the utility
+`kindle-dash` already calls once a cycle to put the level in its log.
+
+```sh
+/mnt/us/dashboard/local/battery.sh --probe
+```
+
+Same shape as the temperature probe: what the utility answers, the sysfs files
+that look like a capacity, and the number that would be drawn. `BATTERY=false`
+in `local/env.sh` turns it off and leaves the dash.
+
+**It is not live, and it is not meant to be.** The panel is suspended to RAM
+for 29 minutes out of every 30, so the level is read when the device wakes to
+draw — exactly as old as the image beside it, at worst half an hour. On a
+battery that lasts weeks that is a figure on a wall, not an instrument.
+
+Two things differ from the temperature above.
+
+**No `eips` step.** The number lives in the footer, whose type is 12.4 px; an
+`eips` cell is 12×20 px, so drawn by `eips` the battery level would be the
+largest thing in the bar it sits in. Without `fbink` it is simply not drawn and
+the dash stays — where the temperature, at 25 px, can afford to come out small.
+
+**A smaller `px`.** `BATTERY_PX` is 15 against the temperature's 30, and it is
+not an arbitrary number: at 15 every character of `fonts/indoor.ttf` advances
+exactly 8 px, which is the width of one cell of fbink's bitmap face at
+`BATTERY_SCALE=1`. Both ways of filling the blank therefore fill exactly the
+same 24×16 box, and the padding that right-aligns `" 87"` against the per-cent
+sign works the same in both.
+
+`BATTERY_X/Y/SCALE/CHARS` are the same kind of coupling as their
+`INDOOR_TEMP_*` counterparts and must match `BATTERY_SLOT_X/Y`,
+`BATTERY_SCALE` and `BATTERY_SLOT_CHARS` in `src/k4weather/model.py`.
 
 ## The real start
 

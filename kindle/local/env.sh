@@ -134,6 +134,42 @@ export INDOOR_TEMP_SCALE=${INDOOR_TEMP_SCALE:-2}
 # Must match INDOOR_SLOT_X/Y, INDOOR_SCALE and INDOOR_SLOT_CHARS in
 # src/k4weather/model.py, which is where the layout leaves the hole. The eips
 # fallback derives its own cell coordinates from these four numbers.
-export INDOOR_TEMP_X=${INDOOR_TEMP_X:-468}
+export INDOOR_TEMP_X=${INDOOR_TEMP_X:-492}
 export INDOOR_TEMP_Y=${INDOOR_TEMP_Y:-134}
 export INDOOR_TEMP_CHARS=${INDOOR_TEMP_CHARS:-3}
+
+# ------------------------------------------------------------- battery level
+# The other number that can only be read here. It goes into a blank of its own
+# at the right end of the footer, beside the time the image was generated, and
+# it is drawn by the same fbink and the same font as the temperature above —
+# INDOOR_TEMP_FBINK and INDOOR_TEMP_TTF, which is why those two keep the names
+# they were given when the temperature was the only thing drawn on the image.
+#
+# It is refreshed with the page and not in between: half an hour old at worst,
+# which is all a battery that lasts weeks ever needs to be. false leaves the
+# dash the image carries.
+export BATTERY=${BATTERY:-true}
+
+# Where the level comes from. gasgauge-info is the Lab126 utility kindle-dash
+# already calls once a cycle to write the level into its log; -c is its
+# capacity flag and answers "87%". `battery.sh --probe` lists what this device
+# actually exposes.
+export BATTERY_CMD=${BATTERY_CMD:-"gasgauge-info -c"}
+
+# fbink's rendering size in pixels, as INDOOR_TEMP_PX is for the temperature:
+# ascent-to-descent, not the em square. 15 is 12.4px of stylesheet, the size of
+# the footer it sits in, and is also the size at which every character of
+# indoor.ttf advances exactly 8 px — the width of one cell of fbink's bitmap
+# face at BATTERY_SCALE 1, so both ways of filling the blank fill the same box.
+export BATTERY_PX=${BATTERY_PX:-15}
+export BATTERY_SCALE=${BATTERY_SCALE:-1}
+
+# Where it goes: the top left corner of the blank, in pixels of the image, and
+# how many characters wide it is (three, for a battery that is still full).
+# Must match BATTERY_SLOT_X/Y, BATTERY_SCALE and BATTERY_SLOT_CHARS in
+# src/k4weather/model.py. There is no eips fallback for this one — its cells
+# are taller than the footer's own type — so unlike the temperature these two
+# numbers are not chosen against its 12x20 grid.
+export BATTERY_X=${BATTERY_X:-542}
+export BATTERY_Y=${BATTERY_Y:-769}
+export BATTERY_CHARS=${BATTERY_CHARS:-3}

@@ -78,13 +78,14 @@ section "cosa manca"
 # "3 file mancanti" is a puzzle.
 for f in start.sh stop.sh dash.sh wait-for-wifi.sh xh next-wakeup \
          local/env.sh local/draw.sh local/fetch-dashboard.sh \
-         local/indoor-temp.sh local/interact.sh local/locations.sh \
-         local/suspend.sh; do
+         local/indoor-temp.sh local/battery.sh local/interact.sh \
+         local/locations.sh local/suspend.sh; do
   [ -f "$DASH_DIR/$f" ] || echo "manca: $DASH_DIR/$f"
 done
 [ -f "$DASH_DIR/fbink" ] \
-  && echo "fbink: presente (temperatura interna grande)" \
-  || echo "fbink: assente (temperatura interna disegnata da eips, piccola)"
+  && echo "fbink: presente (temperatura interna grande, batteria disegnata)" \
+  || echo "fbink: assente (temperatura interna da eips, piccola;
+            la batteria non viene disegnata affatto)"
 
 section "fine riga degli script (il CR e' un'installazione da Windows)"
 # The single most damaging thing that can be wrong with this installation, and
@@ -127,6 +128,19 @@ if [ -f "$DASH_DIR/local/env.sh" ]; then
 else
   echo "  local/env.sh non c'e'"
 fi
+
+section "i valori che il dispositivo scrive sull'immagine"
+# Taken after env.sh has been sourced, so they are the readings the panel
+# itself would draw and not the defaults compiled into the two scripts. A blank
+# that stays blank on the wall is answered here and nowhere upstream.
+for reading in indoor-temp battery; do
+  if [ -f "$DASH_DIR/local/$reading.sh" ]; then
+    value=$(sh "$DASH_DIR/local/$reading.sh" 2>&1) || value="NON leggibile"
+    echo "  $reading = [$value]"
+  else
+    echo "  $reading: local/$reading.sh non c'e'"
+  fi
+done
 
 section "dispositivi di input"
 # `auto` listens on all of them; anything else has to exist, and this is where

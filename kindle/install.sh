@@ -124,7 +124,7 @@ strip_cr() {
 }
 
 step "Applying the k4-weather configuration"
-for script in env.sh fetch-dashboard.sh indoor-temp.sh draw.sh \
+for script in env.sh fetch-dashboard.sh indoor-temp.sh battery.sh draw.sh \
               locations.sh interact.sh suspend.sh; do
   cp "$HERE/local/$script" "$BUILD/local/$script"
 done
@@ -168,10 +168,12 @@ if [ ! -f "$HERE/fbink" ]; then
       echo "    extracted $(wc -c <"$HERE/fbink" | tr -d ' ') bytes to kindle/fbink"
     else
       rm -f "$HERE/fbink.part"
-      echo "    could not extract it; the panel will use eips and a smaller number"
+      echo "    could not extract it; the temperature will be small and there
+      will be no battery level"
     fi
   else
-    echo "    could not download it; the panel will use eips and a smaller number"
+    echo "    could not download it; the temperature will be small and there
+    will be no battery level"
   fi
 fi
 
@@ -182,13 +184,15 @@ if [ -f "$HERE/fbink" ]; then
   FBINK="$REMOTE_DIR/fbink"
   echo "    fbink: $(wc -c <"$HERE/fbink" | tr -d ' ') bytes"
 else
-  echo "    no fbink: the value will be drawn by eips, small"
+  echo "    no fbink: the temperature will be drawn by eips, small, and the
+    battery level not at all"
 fi
 
-# The page's own font, so the reading looks like the figures beside it rather
-# than like the output of the other program that it is. Tiny — eleven
-# characters — and useless without fbink, but copied anyway so that installing
-# fbink later needs nothing else. Built by tools/indoor_font.py.
+# The page's own font, so the two readings the device draws look like the
+# figures beside them rather than like the output of the other program that
+# they are. Tiny — eleven characters — and useless without fbink, but copied
+# anyway so that installing fbink later needs nothing else. Built by
+# tools/indoor_font.py.
 if [ -f "$HERE/fonts/indoor.ttf" ]; then
   mkdir -p "$BUILD/fonts"
   cp "$HERE/fonts/indoor.ttf" "$BUILD/fonts/indoor.ttf"
@@ -197,17 +201,19 @@ else
   echo "    no kindle/fonts/indoor.ttf: fbink will use its own bitmap face"
 fi
 
-# The indoor temperature exists only on the device, and kindle-dash has no hook
-# that runs once the screen is up: it calls /usr/sbin/eips inline. Rewriting
-# those call sites to our wrapper is the smallest change that creates one — it
-# draws the image first, then stamps the value on top of it.
+# The indoor temperature and the battery level exist only on the device, and
+# kindle-dash has no hook that runs once the screen is up: it calls
+# /usr/sbin/eips inline. Rewriting those call sites to our wrapper is the
+# smallest change that creates one — it draws the image first, then stamps the
+# two values on top of it.
 sed -i.bak 's|/usr/sbin/eips|"$DIR/local/draw.sh"|g' "$BUILD/dash.sh"
 rm -f "$BUILD/dash.sh.bak"
 patched="$(grep -c 'local/draw.sh' "$BUILD/dash.sh" || true)"
 [ "$patched" -ge 2 ] || fail "dash.sh no longer calls /usr/sbin/eips: kindle-dash
     has changed and the overlay needs rewiring. To install without it, drop the
-    two sed lines from this script and set INDOOR_TEMP=false in local/env.sh."
-echo "    indoor temperature: $patched eips call sites routed through local/draw.sh"
+    two sed lines from this script and set INDOOR_TEMP=false and BATTERY=false
+    in local/env.sh."
+echo "    values drawn on the device: $patched eips call sites via local/draw.sh"
 
 # The other two rewrites, and the reason the page buttons work at all.
 #

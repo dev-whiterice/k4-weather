@@ -35,18 +35,19 @@ MIN_DAY_BAR_WIDTH = 10.0
 # itself out of date.
 STALE_AFTER = timedelta(minutes=90)
 
-# The indoor temperature is the one number this program cannot render: the
-# sensor is on the Kindle and the image is built in the cloud. The device draws
-# it on top of the image, and all the layout can do is leave a hole of exactly
-# the right size in exactly the right place.
+# Two numbers on this page cannot be rendered here: the room's temperature and
+# the battery level. Both are read by the Kindle and the image is built in the
+# cloud, so all the layout can do is leave each of them a hole of exactly the
+# right size in exactly the right place, and let the device fill it in after it
+# has drawn the image.
 #
-# Two programs on the device can fill that hole, and both write text on a fixed
+# Two programs on the device can fill a hole, and both write text on a fixed
 # character grid. `fbink` scales its 8x16 px bitmap font by a whole number —
-# cells of 32x64 px at INDOOR_SCALE 4 — and is what makes the reading legible
-# from across the room. `eips`, the stock tool, has exactly one size, cells of
-# 12x20 px, and is the fallback where fbink is not installed. The hole is sized
-# for fbink; eips centres its smaller digits inside the same rectangle, so the
-# two sides have one box to agree on rather than two.
+# cells of 16x32 px at INDOOR_SCALE 2 — and can also render a real font at a
+# size in pixels, which is what makes the reading look like the page. `eips`,
+# the stock tool, has exactly one size, cells of 12x20 px. A hole is sized for
+# fbink; where eips is the one that fills it, it centres its own digits inside
+# the same rectangle, so the two sides have one box to agree on rather than two.
 FBINK_CELL_WIDTH = 8
 FBINK_CELL_HEIGHT = 16
 EIPS_CELL_WIDTH = 12
@@ -71,20 +72,63 @@ INDOOR_SCALE = 2
 # Three characters is the widest reading the device is allowed to produce
 # (INDOOR_TEMP_MIN is -10 °C), and the value is right-aligned inside them.
 INDOOR_SLOT_CHARS = 3
-# Top-left corner of the hole, in pixels of the final PNG: hard against the
-# right margin of the page, vertically centred on the current-conditions band.
-# Both are chosen against the eips grid too, so that the fallback lands square
-# inside the same box: x on a multiple of 12, and y such that y + (height - 20)
-# / 2 comes out a multiple of 20.
+# Top-left corner of the hole, in pixels of the final PNG: centred over the
+# air-quality cell of the strip below, vertically centred on the
+# current-conditions band. Both are chosen against the eips grid too, so that
+# the fallback lands square inside the same box: x on a multiple of 12, and y
+# such that y + (height - 20) / 2 comes out a multiple of 20.
 #
 # These four numbers must match INDOOR_TEMP_X/Y/SCALE/CHARS in
 # `kindle/local/env.sh`: the Kindle writes at those coordinates and nothing here
 # can tell it otherwise. `tests/test_kindle.py` keeps the two sides in step.
-INDOOR_SLOT_X = 468
+#
+# 492, not the 468 it read while the slot was twice as wide. Halving the slot
+# halved the block but left its left edge where it was, so all 48 px of the
+# difference pooled between the reading and the right margin — enough empty
+# paper beside it to read as a mistake, which it was. The strip below is five
+# cells of 111.2 px starting at the 22 px margin, so the last of them, air
+# quality, is centred on 522.4; the block is 60 px wide counting the degree
+# sign, and 492 centres it there. The rule hangs 25 px off the left edge of the
+# slot, which then lands it on that cell's own border: the room's reading and
+# the last metric end up in one column, ruled off from the forecast.
+INDOOR_SLOT_X = 492
 # 134, not the 118 the taller slot used, so that the box stays centred on the
 # same line: it lost 32 px of height and half of that comes off the top. The
 # centre is y=150 either way, which is also where the eips fallback lands.
 INDOOR_SLOT_Y = 134
+
+# The battery level is the second reading only the device can take, and it is
+# drawn the same way. What differs is the size and, because of the size, the
+# list of programs allowed to draw it.
+#
+# The room's temperature is a figure among figures, 25 px of it, read from a
+# doorway. This one belongs to the footer, beside the generation time, and is
+# never the reason anybody looks at the panel. At that size `eips` is out: its
+# cells are 12x20 px, taller than the footer's own type, so a level drawn by
+# eips would be the largest thing in the bar it sits in. Where fbink is missing
+# the dash the image carries simply stays — one honest state fewer than the
+# temperature has, and better than a number in the wrong size.
+#
+# 1 puts a bitmap character at 8x16 px, and BATTERY_PX in `kindle/local/env.sh`
+# is the size at which fbink's own rendering of `fonts/indoor.ttf` advances the
+# same 8 px per character. The two ways of filling this hole therefore fill
+# exactly the same 24x16 box. See `kindle/local/draw.sh`.
+BATTERY_SCALE = 1
+# Three characters, for the one reading that needs them: 100.
+BATTERY_SLOT_CHARS = 3
+# Top-left corner of the hole, in pixels of the final PNG. The footer is the
+# last 48 px of the page and the block sits at its right end, past the
+# generation time, with the per-cent sign the image carries hanging off the
+# right of the slot exactly as the degree sign does upstairs: 542 + 24 + 12 is
+# 578, the right margin every other line of the page ends on. The y centres the
+# 16 px box on the footer's own text, so that the digits fbink draws sit on the
+# baseline beside them.
+#
+# The eips grid does not constrain either number here, because eips never draws
+# into this hole. Both must match BATTERY_X/Y in `kindle/local/env.sh`, which
+# `tests/test_kindle.py` checks.
+BATTERY_SLOT_X = 542
+BATTERY_SLOT_Y = 769
 
 # On-screen copy is Italian on purpose: the panel hangs on an Italian wall.
 # Only code comments and documentation are in English.
@@ -179,7 +223,7 @@ class DayRow:
 
 
 @dataclass
-class IndoorSlot:
+class Slot:
     """A rectangle the layout leaves blank for text the Kindle draws itself.
 
     In pixels of the final PNG, so the template can place it directly.
@@ -229,9 +273,10 @@ class Dashboard:
     moon_name: str = ""
     moon_illumination: str = ""
     stale: bool = False
-    # None when the indoor temperature is off: the footer then has no slot for
-    # it, rather than an empty one.
-    indoor: IndoorSlot | None = None
+    # None when the feature is off: the layout then has no slot for it at all,
+    # rather than an empty one nothing on this side of the wire can ever fill.
+    indoor: Slot | None = None
+    battery: Slot | None = None
 
 
 def _parse_local(value: str) -> datetime:
@@ -421,13 +466,27 @@ def _build_metrics(
     return metrics
 
 
-def indoor_slot() -> IndoorSlot:
+def indoor_slot() -> Slot:
     """The blank the Kindle writes the indoor temperature into, in pixels."""
-    return IndoorSlot(
+    return Slot(
         x=INDOOR_SLOT_X,
         y=INDOOR_SLOT_Y,
         width=INDOOR_SLOT_CHARS * FBINK_CELL_WIDTH * INDOOR_SCALE,
         height=FBINK_CELL_HEIGHT * INDOOR_SCALE,
+    )
+
+
+def battery_slot() -> Slot:
+    """The blank the Kindle writes the battery level into, in pixels.
+
+    No eips twin, unlike the indoor slot: at this size the stock tool's 12x20
+    cells are bigger than the footer they would land in. See BATTERY_SCALE.
+    """
+    return Slot(
+        x=BATTERY_SLOT_X,
+        y=BATTERY_SLOT_Y,
+        width=BATTERY_SLOT_CHARS * FBINK_CELL_WIDTH * BATTERY_SCALE,
+        height=FBINK_CELL_HEIGHT * BATTERY_SCALE,
     )
 
 
@@ -532,4 +591,5 @@ def build_dashboard(
         moon_illumination=moon_illum,
         stale=stale,
         indoor=indoor_slot() if cfg.features.indoor_temperature else None,
+        battery=battery_slot() if cfg.features.battery else None,
     )

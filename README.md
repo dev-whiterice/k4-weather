@@ -28,7 +28,7 @@ Open-Meteo  ─►  data model                               │
                     ▼                              eips -g the current one
         8-bit gray, 16 levels, 600×800                   │
                     │                                    ▼
-                    ▼                              fbink -S 4 … " 21"
+                    ▼                              fbink … " 21" and " 87"
      dashboard-<id>.png + locations.json                 │
                     │                                    ▼
         branch `output` ─► GitHub Pages ───────────────► suspend to RAM
@@ -40,9 +40,9 @@ Open-Meteo  ─►  data model                               │
 
 The Kindle is kept deliberately dumb: it downloads an image and draws it. All
 the logic lives in CI, where it is easy to test and to look at in a browser.
-The one exception is the indoor temperature, which no server can know: the
-device reads its own sensor and writes the number into a blank the layout
-leaves for it.
+The exceptions are the two numbers no server can know — the temperature of the
+room and how much battery is left — which the device reads from its own
+hardware and writes into blanks the layout leaves for them.
 
 ## What it shows
 
@@ -57,8 +57,9 @@ leaves for it.
 - **7 days**: icon, min–max range on a **shared scale** — the shape of the week
   reads from the position of the bars, without reading the numbers — plus rain
   probability and maximum wind speed
-- **Footer**: sunrise, sunset, moon phase with illumination percentage, and the
-  time the image was generated
+- **Footer**: sunrise, sunset, moon phase with illumination percentage, the
+  time the image was generated, and the charge left in the Kindle's own
+  battery — read when the panel wakes, so it is as old as the image beside it
 
 ## Several locations
 
@@ -173,13 +174,17 @@ elsewhere:
 - the width of the min–max track in `style.css` (`.day` grid) must match
   `DAY_BAR_WIDTH` in `model.py`, because the bar inside the track is positioned
   in absolute pixels computed there;
-- the blank left for the indoor temperature must match the character grid of
-  whatever draws it — 32×64 px per character for `fbink` at scale 4, 12×20 for
-  the `eips` fallback. `INDOOR_SLOT_*` in `model.py` and `INDOOR_TEMP_*` in
-  `kindle/local/env.sh` say it once per machine and `tests/test_kindle.py`
-  compares them. It is the only element positioned in absolute page pixels, and
-  label, degree sign and dividing rule all hang off that one rectangle, so the
-  browser measurement in `tests/test_render.py` covers the whole block.
+- each blank left for the device — the indoor temperature, the battery level —
+  must match the character grid of whatever draws it: 16×32 px per character
+  for `fbink`'s bitmap face at scale 2, 8×16 at scale 1, and 12×20 for the
+  `eips` fallback the temperature keeps and the battery does not.
+  `INDOOR_SLOT_*` and `BATTERY_SLOT_*` in `model.py`, `INDOOR_TEMP_*` and
+  `BATTERY_*` in `kindle/local/env.sh`, and a third spelling as the fallbacks
+  inside `kindle/local/draw.sh`; `tests/test_kindle.py` compares all three.
+  They are the only elements positioned in absolute page pixels, and label,
+  degree sign, dividing rule, battery icon and per-cent sign all hang off those
+  two rectangles, so the browser measurements in `tests/test_render.py` cover
+  the whole of both blocks.
 
 ## Kindle 4 constraints that explain the choices
 
@@ -189,7 +194,7 @@ elsewhere:
 | `eips` skews RGB PNGs | `postprocess.py` forces 8-bit grayscale with no alpha, and `make inspect` verifies it |
 | Thin strokes and light grays vanish at 167 ppi | Solid-shape icons, hairlines never below 1 px, text in full black |
 | Stock curl/wget do not speak modern TLS | The download uses `xh`, the static client bundled with kindle-dash |
-| `eips` has one font size, 12×20 px | The indoor temperature is drawn by `fbink`, which scales its font; without it the value still appears, small |
+| `eips` has one font size, 12×20 px | The two values the device draws are drawn by `fbink`, which scales its font. Without it the temperature still appears, small; the battery level, which lives in a footer whose type is smaller than an `eips` cell, does not appear at all |
 | The GitHub Actions cron runs 5-20 minutes late | The Kindle wakes 15 minutes offset and the image always carries its generation time |
 
 ### Icons
@@ -238,11 +243,11 @@ private again.
 - [x] Phase 1 — fixed location in `config.yaml`
 - [x] Indoor temperature from the Kindle's own sensor, overlaid client side
       with `fbink` — see [`kindle/README.md`](kindle/README.md)
+- [x] Kindle battery level in the footer, through the same overlay
 - [x] Phase 2 — several locations, chosen on the device with the page buttons
       — see [`kindle/README.md`](kindle/README.md#switching-locations)
 - [ ] Search by name through Open-Meteo geocoding, instead of coordinates
       written into `config.yaml` by hand
-- [ ] Kindle battery level on screen, through the same overlay
 - [ ] Fallback image with an explicit banner when the API does not answer
 
 ## Licence

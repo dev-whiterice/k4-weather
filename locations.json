@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-09-05T23:50:04Z",
+  "locations": [
+    {
+      "id": "caoria",
+      "name": "Caoria",
+      "image": "dashboard-caoria.png"
+    },
+    {
+      "id": "fumane",
+      "name": "Fumane",
+      "image": "dashboard-fumane.png"
+    },
+    {
+      "id": "castel-dazzano",
+      "name": "Castel d'Azzano",
+      "image": "dashboard-castel-dazzano.png"
+    },
+    {
+      "id": "ferrara-monte-baldo",
+      "name": "Ferrara di Monte Baldo",
+      "image": "dashboard-ferrara-monte-baldo.png"
+    },
+    {
+      "id": "verona",
+      "name": "Verona",
+      "image": "dashboard-verona.png"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+<!DOCTYPE html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>k4-weather</title>
+<style>
+  body{margin:0;padding:24px;background:#111;font:14px system-ui;color:#888;
+       display:flex;flex-wrap:wrap;gap:24px;justify-content:center;
+       align-items:flex-start}
+  figure{margin:0;display:flex;flex-direction:column;gap:8px;align-items:center}
+  img{width:min(600px,92vw);image-rendering:pixelated;
+      background:#fff;box-shadow:0 8px 40px #0008}
+  figcaption{color:#bbb}
+  footer{flex-basis:100%;text-align:center}
+  a{color:#888}
+</style>
+<script>
+// Fails visibly rather than silently: a blank page here means the
+// manifest is missing, which is the same fault the Kindle would hit.
+fetch('locations.json', {cache: 'no-store'})
+  .then(response => response.json())
+  .then(manifest => {
+    document.body.innerHTML = manifest.locations.map(location => `
+      <figure>
+        <img src="${location.image}" alt="${location.name}">
+        <figcaption>${location.name}</figcaption>
+      </figure>`).join('') + `
+      <footer>updated every 30 minutes ·
+        <a href="locations.json">locations.json</a> ·
+        <a href="meta.json">meta.json</a></footer>`;
+  })
+  .catch(error => {
+    document.body.textContent = 'locations.json unreadable: ' + error;
+  });
+</script>

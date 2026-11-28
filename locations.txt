@@ -1,0 +1,5 @@
+caoria	dashboard-caoria.png	Caoria
+fumane	dashboard-fumane.png	Fumane
+castel-dazzano	dashboard-castel-dazzano.png	Castel d'Azzano
+ferrara-monte-baldo	dashboard-ferrara-monte-baldo.png	Ferrara di Monte Baldo
+verona	dashboard-verona.png	Verona
